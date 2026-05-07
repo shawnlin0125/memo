@@ -1,0 +1,1044 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Apache Kafka 學習筆記</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;600&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d1117;
+    --bg2: #161b22;
+    --bg3: #1c2128;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text2: #8b949e;
+    --text3: #6e7681;
+    --accent: #f78166;
+    --accent2: #79c0ff;
+    --accent3: #56d364;
+    --accent4: #d2a8ff;
+    --accent5: #ffa657;
+    --accent6: #ff7b72;
+    --tag-bg: #1f2937;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Noto Sans TC', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.8;
+    font-size: 15px;
+  }
+  .header {
+    background: linear-gradient(135deg, #0d1117 0%, #1a1040 50%, #0d1117 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 60px 48px 40px;
+    position: relative;
+    overflow: hidden;
+  }
+  .header::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(ellipse at 60% 40%, rgba(121, 192, 255, 0.06) 0%, transparent 60%),
+                radial-gradient(ellipse at 20% 80%, rgba(247, 129, 102, 0.05) 0%, transparent 50%);
+    pointer-events: none;
+  }
+  .header-inner { max-width: 900px; margin: 0 auto; position: relative; }
+  .eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--accent);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+  .eyebrow::before { content: '$ '; color: var(--text3); }
+  h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: 52px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.1;
+    margin-bottom: 12px;
+  }
+  h1 span { color: var(--accent2); }
+  .subtitle {
+    font-size: 16px;
+    color: var(--text2);
+    margin-bottom: 28px;
+    font-weight: 300;
+  }
+  .tags { display: flex; gap: 8px; flex-wrap: wrap; }
+  .tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    color: var(--text2);
+    background: var(--bg2);
+  }
+  .tag.highlight { border-color: var(--accent2); color: var(--accent2); }
+
+  .nav {
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    padding: 0 48px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .nav-inner {
+    max-width: 900px;
+    margin: 0 auto;
+    display: flex;
+    gap: 0;
+    overflow-x: auto;
+  }
+  .nav a {
+    display: block;
+    padding: 14px 16px;
+    font-size: 13px;
+    color: var(--text2);
+    text-decoration: none;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+    transition: color 0.2s, border-color 0.2s;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .nav a:hover { color: var(--text); border-bottom-color: var(--accent2); }
+
+  .main { max-width: 900px; margin: 0 auto; padding: 48px 48px; }
+
+  .section { margin-bottom: 72px; }
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 32px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .section-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--accent);
+    background: rgba(247,129,102,0.1);
+    border: 1px solid rgba(247,129,102,0.3);
+    padding: 4px 10px;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+  h2 {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .overview-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+  .overview-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+  }
+  .overview-card.full { grid-column: 1 / -1; }
+  .card-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--accent5);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .overview-card p { color: var(--text2); font-size: 14px; }
+
+  .arch-diagram {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 32px;
+    margin-bottom: 24px;
+    overflow-x: auto;
+  }
+  .arch-diagram svg { display: block; min-width: 700px; }
+
+  .component-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+  .component-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    position: relative;
+    overflow: hidden;
+  }
+  .component-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+  }
+  .component-card.blue::before { background: var(--accent2); }
+  .component-card.orange::before { background: var(--accent5); }
+  .component-card.green::before { background: var(--accent3); }
+  .component-card.purple::before { background: var(--accent4); }
+  .component-card.red::before { background: var(--accent6); }
+  .component-card.coral::before { background: var(--accent); }
+  .component-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .component-card.blue .component-name { color: var(--accent2); }
+  .component-card.orange .component-name { color: var(--accent5); }
+  .component-card.green .component-name { color: var(--accent3); }
+  .component-card.purple .component-name { color: var(--accent4); }
+  .component-card.red .component-name { color: var(--accent6); }
+  .component-card.coral .component-name { color: var(--accent); }
+  .component-zh { font-size: 13px; color: var(--text3); margin-bottom: 12px; }
+  .component-desc { font-size: 14px; color: var(--text2); line-height: 1.7; margin-bottom: 12px; }
+  .component-facts { list-style: none; }
+  .component-facts li {
+    font-size: 13px;
+    color: var(--text2);
+    padding: 4px 0;
+    padding-left: 16px;
+    position: relative;
+  }
+  .component-facts li::before {
+    content: '›';
+    position: absolute;
+    left: 0;
+    color: var(--accent3);
+  }
+  .component-card.full-width { grid-column: 1 / -1; }
+
+  .retention-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .retention-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    text-align: center;
+  }
+  .retention-icon {
+    font-size: 28px;
+    margin-bottom: 12px;
+    display: block;
+  }
+  .retention-title { font-weight: 500; font-size: 15px; margin-bottom: 8px; }
+  .retention-card p { font-size: 13px; color: var(--text2); line-height: 1.6; }
+
+  .code-block {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px 24px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: var(--accent3);
+    overflow-x: auto;
+    margin: 16px 0;
+    line-height: 1.8;
+  }
+  .code-block .comment { color: var(--text3); }
+  .code-block .key { color: var(--accent2); }
+  .code-block .val { color: var(--accent5); }
+  .code-block .str { color: var(--accent); }
+
+  .usecase-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+  .usecase-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+  }
+  .usecase-icon { font-size: 24px; margin-bottom: 12px; display: block; }
+  .usecase-title { font-size: 16px; font-weight: 500; margin-bottom: 8px; color: var(--accent2); }
+  .usecase-company {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text3);
+    margin-bottom: 12px;
+    letter-spacing: 1px;
+  }
+  .usecase-card p { font-size: 13px; color: var(--text2); line-height: 1.7; }
+
+  .flow-section {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px;
+    margin-bottom: 24px;
+  }
+  .flow-title { font-size: 16px; font-weight: 500; margin-bottom: 20px; color: var(--accent4); }
+  .flow-steps { display: flex; flex-direction: column; gap: 0; }
+  .flow-step {
+    display: flex;
+    gap: 16px;
+    position: relative;
+    padding-bottom: 20px;
+  }
+  .flow-step:last-child { padding-bottom: 0; }
+  .step-line {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  .step-dot {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--bg3);
+    border: 2px solid var(--accent2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--accent2);
+    flex-shrink: 0;
+  }
+  .step-connector {
+    width: 2px;
+    flex: 1;
+    background: var(--border);
+    margin: 4px 0;
+  }
+  .flow-step:last-child .step-connector { display: none; }
+  .step-content { padding-top: 4px; }
+  .step-label { font-size: 14px; font-weight: 500; margin-bottom: 4px; color: var(--text); }
+  .step-desc { font-size: 13px; color: var(--text2); }
+
+  .callout {
+    background: rgba(121,192,255,0.07);
+    border: 1px solid rgba(121,192,255,0.25);
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin: 20px 0;
+    font-size: 14px;
+    color: var(--text2);
+  }
+  .callout strong { color: var(--accent2); }
+
+  .comparison-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin: 20px 0;
+  }
+  .comparison-table th {
+    background: var(--bg3);
+    color: var(--text2);
+    padding: 10px 16px;
+    text-align: left;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 500;
+    border-bottom: 1px solid var(--border);
+  }
+  .comparison-table td {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text2);
+    vertical-align: top;
+  }
+  .comparison-table tr:last-child td { border-bottom: none; }
+  .comparison-table .name-col { color: var(--accent5); font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 32px 48px;
+    text-align: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--text3);
+    max-width: 900px;
+    margin: 0 auto;
+  }
+
+  @media (max-width: 640px) {
+    .header { padding: 40px 24px 28px; }
+    .nav { padding: 0 24px; }
+    .main { padding: 32px 24px; }
+    h1 { font-size: 36px; }
+    .overview-grid, .component-grid, .retention-grid, .usecase-grid { grid-template-columns: 1fr; }
+    .component-card.full-width { grid-column: auto; }
+  }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-inner">
+    <div class="eyebrow">apache kafka notes</div>
+    <h1>Apache <span>Kafka</span><br>技術筆記</h1>
+    <p class="subtitle">分散式事件串流平台 · 架構、元件、保留政策與業界應用</p>
+    <div class="tags">
+      <span class="tag highlight"># distributed-systems</span>
+      <span class="tag"># event-streaming</span>
+      <span class="tag"># message-queue</span>
+      <span class="tag"># real-time</span>
+    </div>
+  </div>
+</header>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="#overview">01. 概覽</a>
+    <a href="#architecture">02. 架構圖</a>
+    <a href="#components">03. 元件</a>
+    <a href="#retention">04. 保留政策</a>
+    <a href="#flow">05. 訊息流</a>
+    <a href="#usecases">06. 業界應用</a>
+    <a href="#compare">07. 比較</a>
+  </div>
+</nav>
+
+<main class="main">
+
+  <!-- SECTION 1: OVERVIEW -->
+  <section class="section" id="overview">
+    <div class="section-header">
+      <span class="section-num">01</span>
+      <h2>什麼是 Apache Kafka？</h2>
+    </div>
+    <div class="overview-grid">
+      <div class="overview-card">
+        <div class="card-label">起源</div>
+        <p>由 LinkedIn 於 2010 年開發，2011 年捐給 Apache，用於解決每天處理數十億條事件的挑戰。名稱致敬作家法蘭茲·卡夫卡（Franz Kafka）。</p>
+      </div>
+      <div class="overview-card">
+        <div class="card-label">核心定位</div>
+        <p>分散式、高吞吐量的<strong>事件串流平台</strong>（Event Streaming Platform），同時具備訊息佇列（Message Queue）與資料管道（Data Pipeline）功能。</p>
+      </div>
+      <div class="overview-card">
+        <div class="card-label">三大核心能力</div>
+        <p><strong>Publish / Subscribe</strong> — 發布與訂閱事件串流<br>
+           <strong>Store</strong> — 持久化儲存事件，支援容錯<br>
+           <strong>Process</strong> — 即時或歷史事件處理</p>
+      </div>
+      <div class="overview-card">
+        <div class="card-label">關鍵特性</div>
+        <p>高吞吐量（每秒百萬級訊息）· 低延遲（毫秒級）· 水平擴展 · 持久化儲存 · 容錯機制 · 支援精確一次語義（Exactly-once）</p>
+      </div>
+    </div>
+    <div class="callout">
+      <strong>核心思維：</strong>Kafka 把資料視為無限的 <code>Log（日誌）</code>，Producer 不斷往 Log 尾端 append 資料，Consumer 從特定位置讀取，兩者完全解耦。這種設計讓 Kafka 同時支援實時串流與歷史重播（Replay）。
+    </div>
+  </section>
+
+  <!-- SECTION 2: ARCHITECTURE -->
+  <section class="section" id="architecture">
+    <div class="section-header">
+      <span class="section-num">02</span>
+      <h2>整體架構圖</h2>
+    </div>
+    <div class="arch-diagram">
+      <svg viewBox="0 0 760 420" xmlns="http://www.w3.org/2000/svg" width="100%">
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 z" fill="#30363d"/>
+          </marker>
+          <marker id="arrow-blue" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 z" fill="#79c0ff"/>
+          </marker>
+          <marker id="arrow-orange" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 z" fill="#ffa657"/>
+          </marker>
+        </defs>
+
+        <!-- Background regions -->
+        <rect x="10" y="10" width="730" height="400" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+
+        <!-- Producers section -->
+        <rect x="30" y="30" width="140" height="360" rx="8" fill="#1c2128" stroke="#30363d" stroke-width="0.5"/>
+        <text x="100" y="55" text-anchor="middle" fill="#8b949e" font-size="10" font-family="JetBrains Mono">PRODUCERS</text>
+        <rect x="45" y="65" width="110" height="36" rx="5" fill="#0d1117" stroke="#79c0ff" stroke-width="1"/>
+        <text x="100" y="87" text-anchor="middle" fill="#79c0ff" font-size="12" font-family="JetBrains Mono">App A</text>
+        <rect x="45" y="115" width="110" height="36" rx="5" fill="#0d1117" stroke="#79c0ff" stroke-width="1"/>
+        <text x="100" y="137" text-anchor="middle" fill="#79c0ff" font-size="12" font-family="JetBrains Mono">App B</text>
+        <rect x="45" y="165" width="110" height="36" rx="5" fill="#0d1117" stroke="#79c0ff" stroke-width="1"/>
+        <text x="100" y="187" text-anchor="middle" fill="#79c0ff" font-size="12" font-family="JetBrains Mono">Microservice</text>
+        <rect x="45" y="215" width="110" height="36" rx="5" fill="#0d1117" stroke="#79c0ff" stroke-width="1"/>
+        <text x="100" y="237" text-anchor="middle" fill="#79c0ff" font-size="12" font-family="JetBrains Mono">IoT Device</text>
+        <rect x="45" y="265" width="110" height="36" rx="5" fill="#0d1117" stroke="#79c0ff" stroke-width="1"/>
+        <text x="100" y="287" text-anchor="middle" fill="#79c0ff" font-size="12" font-family="JetBrains Mono">DB CDC</text>
+
+        <!-- Arrows Producer -> Kafka -->
+        <line x1="155" y1="83" x2="200" y2="140" stroke="#79c0ff" stroke-width="1" marker-end="url(#arrow-blue)" stroke-dasharray="4,2"/>
+        <line x1="155" y1="133" x2="200" y2="175" stroke="#79c0ff" stroke-width="1" marker-end="url(#arrow-blue)" stroke-dasharray="4,2"/>
+        <line x1="155" y1="183" x2="200" y2="210" stroke="#79c0ff" stroke-width="1" marker-end="url(#arrow-blue)" stroke-dasharray="4,2"/>
+        <line x1="155" y1="233" x2="200" y2="245" stroke="#79c0ff" stroke-width="1" marker-end="url(#arrow-blue)" stroke-dasharray="4,2"/>
+        <line x1="155" y1="283" x2="200" y2="280" stroke="#79c0ff" stroke-width="1" marker-end="url(#arrow-blue)" stroke-dasharray="4,2"/>
+
+        <!-- Kafka Cluster -->
+        <rect x="195" y="40" width="370" height="340" rx="8" fill="#1c2128" stroke="#f78166" stroke-width="1.5"/>
+        <text x="380" y="62" text-anchor="middle" fill="#f78166" font-size="11" font-family="JetBrains Mono">KAFKA CLUSTER</text>
+
+        <!-- ZooKeeper/KRaft -->
+        <rect x="505" y="50" width="50" height="20" rx="4" fill="#1a1040" stroke="#d2a8ff" stroke-width="0.8"/>
+        <text x="530" y="64" text-anchor="middle" fill="#d2a8ff" font-size="9" font-family="JetBrains Mono">KRaft</text>
+
+        <!-- Brokers -->
+        <rect x="210" y="75" width="340" height="290" rx="6" fill="#0d1117" stroke="#30363d" stroke-width="0.5"/>
+        <text x="380" y="93" text-anchor="middle" fill="#6e7681" font-size="10" font-family="JetBrains Mono">BROKERS</text>
+
+        <!-- Broker 1 -->
+        <rect x="220" y="100" width="100" height="250" rx="5" fill="#161b22" stroke="#30363d" stroke-width="0.5"/>
+        <text x="270" y="118" text-anchor="middle" fill="#8b949e" font-size="9" font-family="JetBrains Mono">Broker 1</text>
+        <rect x="228" y="125" width="84" height="28" rx="4" fill="#1c2128" stroke="#56d364" stroke-width="0.8"/>
+        <text x="270" y="143" text-anchor="middle" fill="#56d364" font-size="9" font-family="JetBrains Mono">Topic-A P0 ★</text>
+        <rect x="228" y="160" width="84" height="28" rx="4" fill="#1c2128" stroke="#30363d" stroke-width="0.5"/>
+        <text x="270" y="178" text-anchor="middle" fill="#6e7681" font-size="9" font-family="JetBrains Mono">Topic-A P1</text>
+        <rect x="228" y="195" width="84" height="28" rx="4" fill="#1c2128" stroke="#56d364" stroke-width="0.8"/>
+        <text x="270" y="213" text-anchor="middle" fill="#56d364" font-size="9" font-family="JetBrains Mono">Topic-B P0 ★</text>
+        <rect x="228" y="230" width="84" height="28" rx="4" fill="#1c2128" stroke="#30363d" stroke-width="0.5"/>
+        <text x="270" y="248" text-anchor="middle" fill="#6e7681" font-size="9" font-family="JetBrains Mono">Topic-B P1</text>
+        <text x="270" y="295" text-anchor="middle" fill="#444" font-size="18">...</text>
+
+        <!-- Broker 2 -->
+        <rect x="330" y="100" width="100" height="250" rx="5" fill="#161b22" stroke="#30363d" stroke-width="0.5"/>
+        <text x="380" y="118" text-anchor="middle" fill="#8b949e" font-size="9" font-family="JetBrains Mono">Broker 2</text>
+        <rect x="338" y="125" width="84" height="28" rx="4" fill="#1c2128" stroke="#30363d" stroke-width="0.5"/>
+        <text x="380" y="143" text-anchor="middle" fill="#6e7681" font-size="9" font-family="JetBrains Mono">Topic-A P0</text>
+        <rect x="338" y="160" width="84" height="28" rx="4" fill="#1c2128" stroke="#56d364" stroke-width="0.8"/>
+        <text x="380" y="178" text-anchor="middle" fill="#56d364" font-size="9" font-family="JetBrains Mono">Topic-A P1 ★</text>
+        <rect x="338" y="195" width="84" height="28" rx="4" fill="#1c2128" stroke="#30363d" stroke-width="0.5"/>
+        <text x="380" y="213" text-anchor="middle" fill="#6e7681" font-size="9" font-family="JetBrains Mono">Topic-B P0</text>
+        <rect x="338" y="230" width="84" height="28" rx="4" fill="#1c2128" stroke="#56d364" stroke-width="0.8"/>
+        <text x="380" y="248" text-anchor="middle" fill="#56d364" font-size="9" font-family="JetBrains Mono">Topic-B P1 ★</text>
+        <text x="380" y="295" text-anchor="middle" fill="#444" font-size="18">...</text>
+
+        <!-- Broker 3 -->
+        <rect x="440" y="100" width="100" height="250" rx="5" fill="#161b22" stroke="#30363d" stroke-width="0.5"/>
+        <text x="490" y="118" text-anchor="middle" fill="#8b949e" font-size="9" font-family="JetBrains Mono">Broker 3</text>
+        <rect x="448" y="125" width="84" height="28" rx="4" fill="#1c2128" stroke="#30363d" stroke-width="0.5"/>
+        <text x="490" y="143" text-anchor="middle" fill="#6e7681" font-size="9" font-family="JetBrains Mono">Topic-A P0</text>
+        <rect x="448" y="160" width="84" height="28" rx="4" fill="#1c2128" stroke="#30363d" stroke-width="0.5"/>
+        <text x="490" y="178" text-anchor="middle" fill="#6e7681" font-size="9" font-family="JetBrains Mono">Topic-A P1</text>
+        <rect x="448" y="195" width="84" height="28" rx="4" fill="#1c2128" stroke="#30363d" stroke-width="0.5"/>
+        <text x="490" y="213" text-anchor="middle" fill="#6e7681" font-size="9" font-family="JetBrains Mono">Topic-B P0</text>
+        <rect x="448" y="230" width="84" height="28" rx="4" fill="#1c2128" stroke="#30363d" stroke-width="0.5"/>
+        <text x="490" y="248" text-anchor="middle" fill="#6e7681" font-size="9" font-family="JetBrains Mono">Topic-B P1</text>
+        <text x="490" y="295" text-anchor="middle" fill="#444" font-size="18">...</text>
+
+        <!-- Legend -->
+        <rect x="220" y="360" width="10" height="10" rx="2" fill="none" stroke="#56d364" stroke-width="1.5"/>
+        <text x="236" y="370" fill="#8b949e" font-size="9" font-family="JetBrains Mono">★ Leader</text>
+        <rect x="310" y="360" width="10" height="10" rx="2" fill="none" stroke="#30363d" stroke-width="0.8"/>
+        <text x="326" y="370" fill="#8b949e" font-size="9" font-family="JetBrains Mono">Replica</text>
+
+        <!-- Arrows Kafka -> Consumers -->
+        <line x1="565" y1="140" x2="610" y2="100" stroke="#ffa657" stroke-width="1" marker-end="url(#arrow-orange)" stroke-dasharray="4,2"/>
+        <line x1="565" y1="180" x2="610" y2="165" stroke="#ffa657" stroke-width="1" marker-end="url(#arrow-orange)" stroke-dasharray="4,2"/>
+        <line x1="565" y1="220" x2="610" y2="230" stroke="#ffa657" stroke-width="1" marker-end="url(#arrow-orange)" stroke-dasharray="4,2"/>
+        <line x1="565" y1="260" x2="610" y2="295" stroke="#ffa657" stroke-width="1" marker-end="url(#arrow-orange)" stroke-dasharray="4,2"/>
+        <line x1="565" y1="300" x2="610" y2="330" stroke="#ffa657" stroke-width="1" marker-end="url(#arrow-orange)" stroke-dasharray="4,2"/>
+
+        <!-- Consumers section -->
+        <rect x="605" y="30" width="135" height="360" rx="8" fill="#1c2128" stroke="#30363d" stroke-width="0.5"/>
+        <text x="672" y="55" text-anchor="middle" fill="#8b949e" font-size="10" font-family="JetBrains Mono">CONSUMERS</text>
+        <rect x="618" y="65" width="108" height="52" rx="5" fill="#0d1117" stroke="#ffa657" stroke-width="1"/>
+        <text x="672" y="85" text-anchor="middle" fill="#ffa657" font-size="11" font-family="JetBrains Mono">Consumer</text>
+        <text x="672" y="105" text-anchor="middle" fill="#6e7681" font-size="9" font-family="JetBrains Mono">Group A</text>
+        <rect x="618" y="130" width="108" height="52" rx="5" fill="#0d1117" stroke="#ffa657" stroke-width="1"/>
+        <text x="672" y="150" text-anchor="middle" fill="#ffa657" font-size="11" font-family="JetBrains Mono">Consumer</text>
+        <text x="672" y="170" text-anchor="middle" fill="#6e7681" font-size="9" font-family="JetBrains Mono">Group B</text>
+        <rect x="618" y="200" width="108" height="36" rx="5" fill="#0d1117" stroke="#ffa657" stroke-width="1"/>
+        <text x="672" y="222" text-anchor="middle" fill="#ffa657" font-size="11" font-family="JetBrains Mono">Analytics</text>
+        <rect x="618" y="250" width="108" height="36" rx="5" fill="#0d1117" stroke="#ffa657" stroke-width="1"/>
+        <text x="672" y="272" text-anchor="middle" fill="#ffa657" font-size="11" font-family="JetBrains Mono">Data Lake</text>
+        <rect x="618" y="300" width="108" height="36" rx="5" fill="#0d1117" stroke="#ffa657" stroke-width="1"/>
+        <text x="672" y="322" text-anchor="middle" fill="#ffa657" font-size="11" font-family="JetBrains Mono">Monitoring</text>
+      </svg>
+    </div>
+    <div class="callout">
+      <strong>重要觀念：</strong>同一份 Topic 資料可以同時被多個 Consumer Group 讀取，各自維護獨立的 offset，互不干擾。這是 Kafka 相較傳統 MQ 的核心優勢之一。
+    </div>
+  </section>
+
+  <!-- SECTION 3: COMPONENTS -->
+  <section class="section" id="components">
+    <div class="section-header">
+      <span class="section-num">03</span>
+      <h2>核心元件詳解</h2>
+    </div>
+    <div class="component-grid">
+      <div class="component-card blue">
+        <div class="component-name">Broker</div>
+        <div class="component-zh">訊息代理節點</div>
+        <div class="component-desc">
+          Kafka Cluster 中的單一伺服器節點，負責接收、儲存並傳遞訊息。每個 Broker 有唯一的 ID，Cluster 通常由 3~10 個 Broker 組成以確保高可用性。
+        </div>
+        <ul class="component-facts">
+          <li>每個 Broker 持有部分 Partition（Leader 或 Replica）</li>
+          <li>一個 Broker 失效時，其他 Broker 的 Replica 接手成為新 Leader</li>
+          <li>Bootstrap Broker：Producer/Consumer 連接的入口點</li>
+          <li>Kafka 3.0+ 不再需要 ZooKeeper，改用 <strong>KRaft</strong> 模式</li>
+        </ul>
+      </div>
+
+      <div class="component-card orange">
+        <div class="component-name">Topic</div>
+        <div class="component-zh">主題 / 訊息類別</div>
+        <div class="component-desc">
+          邏輯上的訊息分類容器，類似資料庫中的 Table。Producer 將訊息發布到特定 Topic，Consumer 從 Topic 訂閱讀取。名稱為字串，需唯一。
+        </div>
+        <ul class="component-facts">
+          <li>一個 Topic 可以有多個 Partition（平行處理）</li>
+          <li>Topic 是 append-only 的不可變 Log</li>
+          <li>支援設定 Retention 保留政策（時間/大小）</li>
+          <li>可設定 Replication Factor 控制副本數量</li>
+        </ul>
+      </div>
+
+      <div class="component-card green">
+        <div class="component-name">Partition</div>
+        <div class="component-zh">分區</div>
+        <div class="component-desc">
+          Topic 的實體儲存單位，是 Kafka 實現水平擴展與並行處理的關鍵。每個 Partition 是有序的、不可變的訊息序列，Partition 數量決定最大並行消費數。
+        </div>
+        <ul class="component-facts">
+          <li>每個 Partition 有一個 Leader 和多個 Replica（ISR）</li>
+          <li>訊息在 Partition 內部保證有序，跨 Partition 不保證</li>
+          <li>Producer 用 Key Hash / Round-Robin 決定寫入哪個 Partition</li>
+          <li>Partition 數量增加可提高吞吐量，但增加後無法減少</li>
+          <li>規劃原則：Partition 數 ≥ Consumer 數（同一 Group）</li>
+        </ul>
+      </div>
+
+      <div class="component-card purple">
+        <div class="component-name">Consumer Group</div>
+        <div class="component-zh">消費者群組</div>
+        <div class="component-desc">
+          一組共同消費 Topic 的 Consumer 集合，共享同一個 Group ID。Kafka 保證同一 Group 中每個 Partition 只被一個 Consumer 讀取，實現負載均衡。
+        </div>
+        <ul class="component-facts">
+          <li>Group 中的 Consumer 數 > Partition 數時，多餘的 Consumer 閒置</li>
+          <li>Group Rebalance：Consumer 加入/離開時重新分配 Partition</li>
+          <li>不同 Group 獨立消費，互不影響</li>
+          <li>Group Coordinator 負責管理 Group 成員關係</li>
+        </ul>
+      </div>
+
+      <div class="component-card red">
+        <div class="component-name">Offset</div>
+        <div class="component-zh">偏移量</div>
+        <div class="component-desc">
+          每條訊息在 Partition 中的唯一遞增序號，從 0 開始，不可變更。Consumer 透過追蹤 Offset 確認讀取進度，支援重播（Replay）歷史訊息。
+        </div>
+        <ul class="component-facts">
+          <li>Offset 儲存在特殊 Topic：<code>__consumer_offsets</code></li>
+          <li>Auto-commit vs Manual-commit（避免訊息遺失或重複）</li>
+          <li>可重設 Offset 到指定位置，實現訊息重播</li>
+          <li>earliest / latest / timestamp 三種重設策略</li>
+        </ul>
+      </div>
+
+      <div class="component-card coral">
+        <div class="component-name">Producer / Consumer</div>
+        <div class="component-zh">生產者 / 消費者</div>
+        <div class="component-desc">
+          <strong>Producer</strong> 負責發布訊息到 Topic，可指定 Key 決定路由 Partition，支援 acks 設定（0/1/all）控制可靠性。<br>
+          <strong>Consumer</strong> 訂閱 Topic 並從 Partition 拉取（Poll）訊息。
+        </div>
+        <ul class="component-facts">
+          <li>acks=0：不等確認（最快，可能丟失）</li>
+          <li>acks=1：Leader 確認即可（預設）</li>
+          <li>acks=all：所有 ISR 確認（最安全）</li>
+          <li>Consumer 採 Pull 模式（非 Push），自行控制速率</li>
+        </ul>
+      </div>
+
+      <div class="component-card blue full-width">
+        <div class="component-name">Replication & ISR（In-Sync Replicas）</div>
+        <div class="component-zh">複製機制與同步副本集合</div>
+        <div class="component-desc">
+          Kafka 透過 Replication Factor 決定每個 Partition 複製幾份。ISR 是當前與 Leader 保持同步的 Replica 集合。只有 ISR 中的 Replica 才有資格被選為新 Leader。
+        </div>
+        <div class="code-block">
+<span class="comment"># 建立 Topic 時指定 Replication Factor</span>
+kafka-topics.sh --create \
+  --topic user-events \
+  --partitions <span class="val">6</span> \
+  --replication-factor <span class="val">3</span> \
+  --bootstrap-server localhost:<span class="val">9092</span>
+
+<span class="comment"># 建議：replication.factor >= 3，min.insync.replicas = 2</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SECTION 4: RETENTION -->
+  <section class="section" id="retention">
+    <div class="section-header">
+      <span class="section-num">04</span>
+      <h2>保留政策（Retention Policy）</h2>
+    </div>
+    <div class="retention-grid">
+      <div class="retention-card">
+        <span class="retention-icon">⏱</span>
+        <div class="retention-title">時間保留</div>
+        <p>依照訊息的存活時間決定是否刪除，預設保留 <strong>7 天</strong>（168 小時）</p>
+        <div class="code-block" style="text-align:left; font-size:11px; margin-top:12px;">
+<span class="key">log.retention.hours</span>=<span class="val">168</span>
+<span class="key">log.retention.ms</span>=<span class="val">604800000</span>
+        </div>
+      </div>
+      <div class="retention-card">
+        <span class="retention-icon">💾</span>
+        <div class="retention-title">大小保留</div>
+        <p>依照 Log 總大小限制，超過上限時刪除最舊資料</p>
+        <div class="code-block" style="text-align:left; font-size:11px; margin-top:12px;">
+<span class="key">log.retention.bytes</span>=<span class="val">1073741824</span>
+<span class="comment"># 預設 -1（不限制）</span>
+        </div>
+      </div>
+      <div class="retention-card">
+        <span class="retention-icon">🔑</span>
+        <div class="retention-title">Log Compaction</div>
+        <p>依 Key 保留最新一筆訊息，舊版本刪除，適合狀態型（State）資料</p>
+        <div class="code-block" style="text-align:left; font-size:11px; margin-top:12px;">
+<span class="key">cleanup.policy</span>=<span class="str">compact</span>
+<span class="comment"># 或同時開啟</span>
+<span class="key">cleanup.policy</span>=<span class="str">compact,delete</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="flow-section">
+      <div class="flow-title">Log Compaction 運作原理</div>
+      <p style="font-size:13px; color:var(--text2); margin-bottom:16px;">Compaction 不是即時刪除，而是由後台執行緒定期掃描並合併相同 Key 的訊息：</p>
+      <div style="overflow-x:auto;">
+        <svg viewBox="0 0 640 180" xmlns="http://www.w3.org/2000/svg" style="min-width:500px; display:block;">
+          <!-- Before -->
+          <text x="10" y="20" fill="#8b949e" font-size="11" font-family="JetBrains Mono">Before Compaction</text>
+          <rect x="10" y="30" width="70" height="40" rx="4" fill="#1c2128" stroke="#30363d"/>
+          <text x="45" y="48" text-anchor="middle" fill="#ffa657" font-size="10" font-family="JetBrains Mono">K1:V1</text>
+          <text x="45" y="63" text-anchor="middle" fill="#6e7681" font-size="9" font-family="JetBrains Mono">offset:0</text>
+          <rect x="85" y="30" width="70" height="40" rx="4" fill="#1c2128" stroke="#30363d"/>
+          <text x="120" y="48" text-anchor="middle" fill="#79c0ff" font-size="10" font-family="JetBrains Mono">K2:V1</text>
+          <text x="120" y="63" text-anchor="middle" fill="#6e7681" font-size="9" font-family="JetBrains Mono">offset:1</text>
+          <rect x="160" y="30" width="70" height="40" rx="4" fill="#1c2128" stroke="#30363d"/>
+          <text x="195" y="48" text-anchor="middle" fill="#ffa657" font-size="10" font-family="JetBrains Mono">K1:V2</text>
+          <text x="195" y="63" text-anchor="middle" fill="#6e7681" font-size="9" font-family="JetBrains Mono">offset:2</text>
+          <rect x="235" y="30" width="70" height="40" rx="4" fill="#1c2128" stroke="#30363d"/>
+          <text x="270" y="48" text-anchor="middle" fill="#56d364" font-size="10" font-family="JetBrains Mono">K3:V1</text>
+          <text x="270" y="63" text-anchor="middle" fill="#6e7681" font-size="9" font-family="JetBrains Mono">offset:3</text>
+          <rect x="310" y="30" width="70" height="40" rx="4" fill="#1c2128" stroke="#30363d"/>
+          <text x="345" y="48" text-anchor="middle" fill="#ffa657" font-size="10" font-family="JetBrains Mono">K1:V3</text>
+          <text x="345" y="63" text-anchor="middle" fill="#6e7681" font-size="9" font-family="JetBrains Mono">offset:4</text>
+          <rect x="385" y="30" width="70" height="40" rx="4" fill="#1c2128" stroke="#30363d"/>
+          <text x="420" y="48" text-anchor="middle" fill="#79c0ff" font-size="10" font-family="JetBrains Mono">K2:V2</text>
+          <text x="420" y="63" text-anchor="middle" fill="#6e7681" font-size="9" font-family="JetBrains Mono">offset:5</text>
+
+          <!-- Arrow -->
+          <text x="490" y="58" fill="#d2a8ff" font-size="20">→</text>
+          <text x="484" y="72" fill="#d2a8ff" font-size="9" font-family="JetBrains Mono">compact</text>
+
+          <!-- After -->
+          <text x="10" y="115" fill="#8b949e" font-size="11" font-family="JetBrains Mono">After Compaction</text>
+          <rect x="10" y="125" width="70" height="40" rx="4" fill="#1c2128" stroke="#56d364" stroke-width="1.5"/>
+          <text x="45" y="143" text-anchor="middle" fill="#ffa657" font-size="10" font-family="JetBrains Mono">K1:V3</text>
+          <text x="45" y="158" text-anchor="middle" fill="#6e7681" font-size="9" font-family="JetBrains Mono">latest</text>
+          <rect x="85" y="125" width="70" height="40" rx="4" fill="#1c2128" stroke="#56d364" stroke-width="1.5"/>
+          <text x="120" y="143" text-anchor="middle" fill="#79c0ff" font-size="10" font-family="JetBrains Mono">K2:V2</text>
+          <text x="120" y="158" text-anchor="middle" fill="#6e7681" font-size="9" font-family="JetBrains Mono">latest</text>
+          <rect x="160" y="125" width="70" height="40" rx="4" fill="#1c2128" stroke="#56d364" stroke-width="1.5"/>
+          <text x="195" y="143" text-anchor="middle" fill="#56d364" font-size="10" font-family="JetBrains Mono">K3:V1</text>
+          <text x="195" y="158" text-anchor="middle" fill="#6e7681" font-size="9" font-family="JetBrains Mono">only one</text>
+
+          <!-- Delete marks -->
+          <line x1="10" y1="30" x2="230" y2="70" stroke="#ff7b72" stroke-width="0.8" opacity="0.4"/>
+          <line x1="10" y1="70" x2="80" y2="30" stroke="#ff7b72" stroke-width="0.8" opacity="0.4"/>
+          <text x="45" y="95" text-anchor="middle" fill="#ff7b72" font-size="9" font-family="JetBrains Mono">deleted</text>
+          <line x1="160" y1="30" x2="230" y2="70" stroke="#ff7b72" stroke-width="0.8" opacity="0.4"/>
+          <line x1="160" y1="70" x2="230" y2="30" stroke="#ff7b72" stroke-width="0.8" opacity="0.4"/>
+          <text x="195" y="95" text-anchor="middle" fill="#ff7b72" font-size="9" font-family="JetBrains Mono">deleted</text>
+          <line x1="310" y1="30" x2="380" y2="70" stroke="#ff7b72" stroke-width="0.8" opacity="0.4"/>
+          <line x1="310" y1="70" x2="380" y2="30" stroke="#ff7b72" stroke-width="0.8" opacity="0.4"/>
+          <text x="345" y="95" text-anchor="middle" fill="#ff7b72" font-size="9" font-family="JetBrains Mono">deleted</text>
+        </svg>
+      </div>
+    </div>
+
+    <table class="comparison-table">
+      <thead>
+        <tr>
+          <th>政策</th>
+          <th>觸發條件</th>
+          <th>適用場景</th>
+          <th>注意事項</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="name-col">Delete（時間）</td>
+          <td>超過 retention.ms</td>
+          <td>一般事件日誌、不需要歷史全量</td>
+          <td>以 Segment 為單位刪除</td>
+        </tr>
+        <tr>
+          <td class="name-col">Delete（大小）</td>
+          <td>超過 retention.bytes</td>
+          <td>磁碟空間有限的環境</td>
+          <td>時間和大小可同時設定（OR 邏輯）</td>
+        </tr>
+        <tr>
+          <td class="name-col">Compact</td>
+          <td>後台週期性執行</td>
+          <td>使用者設定、資料庫 CDC 快照</td>
+          <td>Key 為 null 的訊息不會被保留</td>
+        </tr>
+        <tr>
+          <td class="name-col">Compact + Delete</td>
+          <td>兩者皆觸發</td>
+          <td>需要最新狀態且控制空間</td>
+          <td>Tombstone 訊息（值為 null）可刪除 Key</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- SECTION 5: MESSAGE FLOW -->
+  <section class="section" id="flow">
+    <div class="section-header">
+      <span class="section-num">05</span>
+      <h2>訊息完整流程</h2>
+    </div>
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+      <div class="flow-section">
+        <div class="flow-title">Producer 發送流程</div>
+        <div class="flow-steps">
+          <div class="flow-step">
+            <div class="step-line"><div class="step-dot">1</div><div class="step-connector"></div></div>
+            <div class="step-content">
+              <div class="step-label">建立 ProducerRecord</div>
+              <div class="step-desc">包含 Topic、可選的 Key/Value/Partition/Timestamp</div>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div class="step-line"><div class="step-dot">2</div><div class="step-connector"></div></div>
+            <div class="step-content">
+              <div class="step-label">Serialization 序列化</div>
+              <div class="step-desc">Key/Value 轉換為 bytes（JSON、Avro、Protobuf）</div>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div class="step-line"><div class="step-dot">3</div><div class="step-connector"></div></div>
+            <div class="step-content">
+              <div class="step-label">Partitioner 路由</div>
+              <div class="step-desc">有 Key → Hash 到固定 Partition；無 Key → Sticky/Round-Robin</div>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div class="step-line"><div class="step-dot">4</div><div class="step-connector"></div></div>
+            <div class="step-content">
+              <div class="step-label">RecordAccumulator 批次緩衝</div>
+              <div class="step-desc">批量傳送以提高吞吐量（batch.size / linger.ms 控制）</div>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div class="step-line"><div class="step-dot">5</div><div class="step-connector"></div></div>
+            <div class="step-content">
+              <div class="step-label">Sender 發送 + 等待 ACK</div>
+              <div class="step-desc">依 acks 設定決定可靠性，失敗依 retries 重試</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="flow-section">
+        <div class="flow-title">Consumer 消費流程</div>
+        <div class="flow-steps">
+          <div class="flow-step">
+            <div class="step-line"><div class="step-dot">1</div><div class="step-connector"></div></div>
+            <div class="step-content">
+              <div class="step-label">加入 Consumer Group</div>
+              <div class="step-desc">向 Group Coordinator 註冊，觸發 Partition Rebalance</div>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div class="step-line"><div class="step-dot">2</div><div class="step-connector"></div></div>
+            <div class="step-content">
+              <div class="step-label">Poll 拉取訊息</div>
+              <div class="step-desc">consumer.poll(timeout) 向 Leader Partition 拉取批次訊息</div>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div class="step-line"><div class="step-dot">3</div><div class="step-connector"></div></div>
+            <div class="step-content">
+              <div class="step-label">Deserialization 反序列化</div>
+              <div class="step-desc">bytes 轉回業務物件，需與 Producer 格式一致</div>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div class="step-line"><div class="step-dot">4</div><div class="step-connector"></div></div>
+            <div class="step-content">
+              <div class="step-label">業務邏輯處理</div>
+              <div class="step-desc">處理訊息內容，寫入 DB 或觸發下游流程</div>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div class="step-line"><div class="step-dot">5</div><div class="step-connector"></div></div>
+            <div class="step-content">
+              <div class="step-label">Commit Offset</div>
+              <div class="step-desc">提交已處理進度，Auto-commit 或手動提交（更安全）</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SECTION 6: USE CASES -->
+  <section class="section" id="usecases">
+    <div class="section-header">
+      <span class="section-num">06</span>
+      <h2>業界實際應用方式</h2>
+    </div>
+    <div class="usecase-grid">
+      <div class="usecase-card">
+        <span class="usecase-icon">📊</span>
+        <div class="usecase-title">實時資料管道（Data Pipeline）</div>
+        <div class="usecase-company">LinkedIn · Airbnb · Uber</div>
+        <p>串接多個系統，讓資料從 DB/App → Kafka → Data Warehouse / Data Lake。使用 Kafka Connect 減少自製 Connector 的工作量，支援 Source 和 Sink Connector。</p>
+      </div>
+      <div class="usecase-card">
+        <span class="usecase-icon">🏦</span>
+        <div class="usecase-title">金融交易事件處理</div>
+        <div class="usecase-company">Morgan Stanley · PayPal · 玉山銀行</div>
+        <p>處理轉帳、付款事件串流，結合 Kafka Streams 進行即時詐騙偵測（Fraud Detection）。Exactly-once 語義確保每筆交易不重複處理。</p>
+      </div>
+      <div class="usecase-card">
+        <span class="usecase-icon">🛍</span>
+        <div class="usecase-title">電商行為追蹤</div>
+        <div class="usecase-company">Shopee · Lazada · 蝦皮</div>
+        <p>追蹤使用者點擊、加購、結帳行為，即時更新推薦引擎。每秒可處理百萬筆事件，支撐大促（如雙11）期間的流量峰值。</p>
+      </div>
+      <div class="usecase-card">
+        <span class="usecase-icon">🔬</span>
+        <div class="usecase-title">微服務事件驅動架構</div>
+        <div class="usecase-company">Netflix · Spotify · LINE</div>
+        <p>取代微服務間的同步 REST 呼叫，改用非同步事件溝通（Event-Driven Architecture）。解耦服務依賴，提高系統彈性。Saga Pattern 透過 Kafka 協調分散式交易。</p>
+      </div>
+      <div class="usecase-card">
+        <span class="usecase-icon">🚗</span>
+        <div class="usecase-title">IoT 與即時監控</div>
+        <div class="usecase-company">Tesla · 台積電（TSMC）· GE</div>
+        <p>工廠感測器、車輛 GPS、設備監控資料統一串入 Kafka，後接 Flink / Spark Streaming 進行即時異常偵測與告警。</p>
+      </div>
+      <div class="usecase-card">
+        <span class="usecase-icon">📝</span>
+        <div class="usecase-title">活動日誌聚合（Log Aggregation）</div>
+        <div class="usecase-company">所有大型系統</div>
+        <p>從多台伺服器收集 Application Log、Audit Log，集中送入 Kafka，再由 Logstash/Fluentd 消費送至 Elasticsearch，支撐 ELK 監控架構（現代 SIEM 的基石）。</p>
+      </div>
+    </div>
+
+    <div class="callout" style="margin-top: 24px;">
+      <strong>業界架構模式：</strong>CQRS + Event Sourcing 搭配 Kafka — 將所有狀態變更以事件形式儲存在 Kafka，透過重播（Replay）重建任意時間點的狀態，是現代 DDD（Domain-Driven Design）的核心實踐。
+    </div>
+  </section>
+
+  <!-- SECTION 7: COMPARE -->
+  <section class="section" id="compare">
+    <div class="section-header">
+      <span class="section-num">07</span>
+      <h2>Kafka vs 其他訊息系統</h2>
+    </div>
+    <table class="comparison-table">
+      <thead>
+        <tr>
+          <th>特性</th>
+          <th>Apache Kafka</th>
+          <th>RabbitMQ</th>
+          <th>AWS SQS</th>
+          <th>Redis Streams</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="name-col">定位</td>
+          <td>事件串流平台</td>
+          <td>傳統 Message Broker</td>
+          <td>雲端托管 MQ</td>
+          <td>輕量串流</td>
+        </tr>
+        <tr>
+          <td class="name-col">訊息保留</td>
+          <td>持久化，可重播</td>
+          <td>消費後刪除</td>
+          <td>14 天上限</td>
+          <td>記憶體為主</td>
+        </tr>
+        <tr>
+          <td class="name-col">吞吐量</td>
+          <td>每秒百萬級</td>
+          <td>每秒萬~十萬</td>
+          <td>高（雲端彈性）</td>
+          <td>中等</td>
+        </tr>
+        <tr>
+          <td class="name-col">延遲</td>
+          <td>毫秒級</td>
+          <td>微秒~毫秒</td>
+          <td>毫秒~數十毫秒</td>
+          <td>微秒級</td>
+        </tr>
+        <tr>
+          <td class="name-col">消費模式</td>
+          <td>Pull（Consumer 主動拉）</td>
+          <td>Push（Broker 推送）</td>
+          <td>Pull / Long Poll</td>
+          <td>Pull / XREAD</td>
+        </tr>
+        <tr>
+          <td class="name-col">適合場景</td>
+          <td>大規模串流、資料管道</td>
+          <td>複雜路由、RPC</td>
+          <td>AWS 生態整合</td>
+          <td>簡單任務佇列</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="callout">
+      <strong>選型建議：</strong>需要高吞吐量、訊息重播、多消費者群組 → 選 Kafka。需要複雜的訊息路由（Exchange、Binding）→ 選 RabbitMQ。全在 AWS 且不想維護 → 選 SQS/Kinesis。已有 Redis 且資料量不大 → Redis Streams 足夠。
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <p>Apache Kafka Technical Notes · Built with ♥ · 版本參考 Kafka 3.x</p>
+</footer>
+
+</body>
+</html>

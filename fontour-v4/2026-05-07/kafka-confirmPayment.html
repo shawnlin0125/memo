@@ -1,0 +1,1056 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>同步 vs 非同步下單流程比較 v3</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Noto+Sans+TC:wght@400;500;700&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #080c12;
+      --surface: #0d1220;
+      --surface2: #121826;
+      --border: #1e2d45;
+      --border2: #243348;
+      --text: #d4dde8;
+      --text-dim: #5a7080;
+      --text-muted: #3a4f60;
+      --db-r: #1d4ed8;
+      --db-w: #15803d;
+      --redis-r: #b45309;
+      --redis-w: #b91c1c;
+      --kafka: #7c3aed;
+      --jvm: #6b7280;
+      --ok: #16a34a;
+      --danger: #dc2626;
+      --warn-col: #d97706;
+      --mono: 'IBM Plex Mono', monospace;
+      --sans: 'Noto Sans TC', sans-serif;
+    }
+
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding-bottom: 80px;
+    }
+
+    /* ── HERO ── */
+    .hero {
+      padding: 44px 24px 32px;
+      text-align: center;
+      border-bottom: 1px solid var(--border);
+      position: relative; overflow: hidden;
+    }
+    .hero::before {
+      content: ''; position: absolute; inset: 0;
+      background:
+        radial-gradient(ellipse 60% 80% at 20% 50%, rgba(37,99,235,0.06) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 80% at 80% 50%, rgba(5,150,105,0.06) 0%, transparent 60%);
+      pointer-events: none;
+    }
+    .hero-tag {
+      display: inline-block; font-family: var(--mono);
+      font-size: 10px; letter-spacing: 2px; color: var(--text-muted);
+      text-transform: uppercase; border: 1px solid var(--border2);
+      padding: 4px 12px; border-radius: 2px; margin-bottom: 14px;
+    }
+    .hero h1 {
+      font-size: clamp(18px, 3vw, 26px); font-weight: 700;
+      color: #fff; letter-spacing: -0.5px; line-height: 1.3;
+    }
+    .hero p {
+      margin-top: 10px; font-size: 12.5px; color: var(--text-dim);
+      max-width: 640px; margin-inline: auto; line-height: 1.7;
+    }
+
+    /* ── TAB NAV ── */
+    .tab-nav {
+      display: flex; justify-content: center; gap: 4px;
+      padding: 18px 24px 0; border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+    .tab-btn {
+      font-family: var(--sans); font-size: 12px; font-weight: 500;
+      color: var(--text-dim); background: transparent; border: none;
+      border-bottom: 2px solid transparent; padding: 10px 16px 12px;
+      cursor: pointer; transition: all 0.2s; white-space: nowrap;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active { color: #fff; border-bottom-color: #fff; }
+
+    .main { max-width: 1200px; margin: 0 auto; padding: 0 16px; }
+    .panel { display: none; padding-top: 32px; }
+    .panel.active { display: block; }
+
+    /* ══════════════
+       FLOW PANEL
+    ══════════════ */
+    .flow-compare {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
+    }
+    @media (max-width: 860px) { .flow-compare { grid-template-columns: 1fr; } }
+
+    .flow-card { border-radius: 8px; border: 1px solid var(--border); overflow: hidden; }
+    .flow-card-header { padding: 14px 18px; border-bottom: 1px solid var(--border); }
+    .flow-card.sync  .flow-card-header { background: rgba(37,99,235,0.08); }
+    .flow-card.async .flow-card-header { background: rgba(5,150,105,0.08); }
+    .flow-card-title { font-size: 13px; font-weight: 700; }
+    .flow-card.sync  .flow-card-title { color: #93c5fd; }
+    .flow-card.async .flow-card-title { color: #6ee7b7; }
+    .flow-card-sub { font-size: 11px; color: var(--text-dim); margin-top: 3px; }
+    .flow-card-body { padding: 16px; background: var(--surface); }
+
+    /* steps */
+    .fstep { display: flex; position: relative; }
+    .fstep:not(:last-child)::after {
+      content: ''; position: absolute;
+      left: 15px; top: 30px; bottom: -10px;
+      width: 1px; background: var(--border2);
+    }
+    .fstep-dot {
+      width: 30px; height: 30px; border-radius: 50%;
+      border: 2px solid var(--border2);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; font-family: var(--mono);
+      font-size: 10px; font-weight: 600; color: var(--text-dim);
+      background: var(--surface2); z-index: 1; position: relative;
+    }
+    .fstep-content { flex: 1; padding: 4px 0 18px 12px; }
+    .fstep-label { font-size: 12px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+    .fstep-desc  { font-size: 11px; color: var(--text-dim); line-height: 1.6; }
+    .fstep-tags  { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+
+    .ftag {
+      font-family: var(--mono); font-size: 9px; font-weight: 600;
+      padding: 2px 7px; border-radius: 2px; color: #fff; letter-spacing: 0.3px;
+    }
+    .ftag.db-r   { background: var(--db-r); }
+    .ftag.db-w   { background: var(--db-w); }
+    .ftag.re-r   { background: var(--redis-r); }
+    .ftag.re-w   { background: var(--redis-w); }
+    .ftag.kafka  { background: var(--kafka); }
+    .ftag.jvm    { background: var(--jvm); }
+    .ftag.ok     { background: var(--ok); }
+    .ftag.danger { background: var(--danger); }
+    .ftag.warn   { background: var(--warn-col); }
+
+    .fstep.s-same  .fstep-dot { border-color: var(--border2); color: var(--text-dim); }
+    .fstep.s-new   .fstep-dot { border-color: #059669; color: #6ee7b7; background: rgba(5,150,105,0.1); }
+    .fstep.s-new   .fstep-label { color: #6ee7b7; }
+    .fstep.s-async .fstep-dot { border-color: #7c3aed; color: #c4b5fd; background: rgba(124,58,237,0.1); }
+    .fstep.s-async .fstep-label { color: #c4b5fd; }
+    .fstep.s-err   .fstep-dot { border-color: #dc2626; color: #fca5a5; background: rgba(220,38,38,0.1); }
+    .fstep.s-err   .fstep-label { color: #fca5a5; }
+    .fstep.s-moved .fstep-dot { border-color: #ca8a04; color: #fde68a; background: rgba(202,138,4,0.1); }
+    .fstep.s-moved .fstep-label { color: #fde68a; }
+
+    .seg-label {
+      font-size: 9px; font-family: var(--mono); letter-spacing: 1.2px;
+      color: var(--text-muted); text-transform: uppercase; margin: 14px 0 10px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .seg-label::before, .seg-label::after {
+      content: ''; flex: 1; height: 1px; background: var(--border2);
+    }
+
+    .flow-callout {
+      margin-top: 14px; border-radius: 6px; padding: 11px 14px;
+      font-size: 11.5px; line-height: 1.7;
+    }
+    .flow-callout.blue  { background: rgba(37,99,235,0.08); border: 1px solid rgba(37,99,235,0.2); color: #93c5fd; }
+    .flow-callout.green { background: rgba(5,150,105,0.08); border: 1px solid rgba(5,150,105,0.2); color: #6ee7b7; }
+
+    .flow-legend {
+      margin-top: 20px; padding: 12px 16px; background: var(--surface);
+      border: 1px solid var(--border); border-radius: 8px;
+      display: flex; gap: 24px; flex-wrap: wrap;
+      font-size: 11px; color: var(--text-dim); align-items: center;
+    }
+
+    /* ══════════════
+       COMPARE TABLE
+    ══════════════ */
+    .compare-section { margin-bottom: 36px; }
+    .compare-section-title {
+      font-family: var(--mono); font-size: 10px; letter-spacing: 1.5px;
+      text-transform: uppercase; color: var(--text-muted);
+      margin-bottom: 14px; padding-bottom: 8px; border-bottom: 1px solid var(--border);
+    }
+    .compare-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    .compare-table th {
+      text-align: left; padding: 10px 14px; font-size: 11px; font-weight: 700;
+      letter-spacing: 0.4px; border-bottom: 1px solid var(--border); white-space: nowrap;
+    }
+    .compare-table th:nth-child(1) { color: var(--text-muted); width: 22%; }
+    .compare-table th:nth-child(2) { color: #93c5fd; background: rgba(37,99,235,0.06); }
+    .compare-table th:nth-child(3) { color: #6ee7b7; background: rgba(5,150,105,0.06); }
+    .compare-table td {
+      padding: 12px 14px; border-bottom: 1px solid var(--border);
+      vertical-align: top; line-height: 1.7; color: var(--text);
+    }
+    .compare-table td:nth-child(1) { color: var(--text-dim); font-weight: 500; font-size: 12px; }
+    .compare-table td:nth-child(2) { background: rgba(37,99,235,0.03); }
+    .compare-table td:nth-child(3) { background: rgba(5,150,105,0.03); }
+    .compare-table tr:hover td { filter: brightness(1.08); }
+
+    .chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 3px;
+      margin: 2px 2px 2px 0;
+    }
+    .chip.good { background: rgba(22,163,74,0.15);  color: #86efac; border: 1px solid rgba(22,163,74,0.3); }
+    .chip.bad  { background: rgba(220,38,38,0.12);  color: #fca5a5; border: 1px solid rgba(220,38,38,0.3); }
+    .chip.warn { background: rgba(217,119,6,0.12);  color: #fcd34d; border: 1px solid rgba(217,119,6,0.3); }
+    .chip.neu  { background: rgba(100,116,139,0.12);color: #94a3b8; border: 1px solid rgba(100,116,139,0.3); }
+
+    /* ══════════════
+       SAGA PANEL
+    ══════════════ */
+    .saga-intro {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 20px 24px; margin-bottom: 28px;
+      font-size: 13px; color: var(--text-dim); line-height: 1.85;
+    }
+    .saga-intro strong { color: var(--text); }
+    .saga-intro .highlight {
+      display: inline-block; background: rgba(124,58,237,0.12);
+      border: 1px solid rgba(124,58,237,0.3); color: #c4b5fd;
+      border-radius: 4px; padding: 2px 8px; font-size: 12px;
+    }
+
+    .saga-compare {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 28px;
+    }
+    @media (max-width: 720px) { .saga-compare { grid-template-columns: 1fr; } }
+
+    .saga-box {
+      border-radius: 8px; border: 1px solid var(--border);
+      overflow: hidden; background: var(--surface);
+    }
+    .saga-box-header {
+      padding: 12px 16px; border-bottom: 1px solid var(--border);
+      font-size: 12px; font-weight: 700;
+    }
+    .saga-box.db  .saga-box-header { background: rgba(29,78,216,0.08); color: #93c5fd; }
+    .saga-box.saga .saga-box-header { background: rgba(124,58,237,0.08); color: #c4b5fd; }
+    .saga-box-body { padding: 16px; font-size: 12px; color: var(--text-dim); line-height: 1.8; }
+
+    .code-block {
+      font-family: var(--mono); font-size: 11px; line-height: 1.8;
+      background: var(--surface2); border: 1px solid var(--border2);
+      border-radius: 6px; padding: 14px 16px; color: #cbd5e1;
+      white-space: pre; overflow-x: auto; margin: 10px 0;
+    }
+    .code-block .c-green { color: #86efac; }
+    .code-block .c-red   { color: #fca5a5; }
+    .code-block .c-yellow{ color: #fde68a; }
+    .code-block .c-blue  { color: #93c5fd; }
+    .code-block .c-purple{ color: #c4b5fd; }
+    .code-block .c-gray  { color: #6b7280; }
+
+    .saga-flow-section { margin-bottom: 28px; }
+    .saga-section-title {
+      font-family: var(--mono); font-size: 10px; letter-spacing: 1.5px;
+      text-transform: uppercase; color: var(--text-muted);
+      margin-bottom: 14px; padding-bottom: 8px; border-bottom: 1px solid var(--border);
+    }
+
+    .saga-steps {
+      display: flex; flex-direction: column; gap: 0;
+      position: relative;
+    }
+    .saga-steps::before {
+      content: ''; position: absolute; left: 20px; top: 0; bottom: 0;
+      width: 2px; background: linear-gradient(180deg, #1e2d45 0%, #374151 40%, #374151 80%, #1e2d45 100%);
+    }
+    .sstep {
+      display: flex; align-items: flex-start; gap: 14px;
+      position: relative; padding: 0 0 20px 0;
+    }
+    .sstep-num {
+      width: 40px; height: 40px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--mono); font-size: 12px; font-weight: 700;
+      flex-shrink: 0; z-index: 1; position: relative;
+    }
+    .sstep.ok   .sstep-num { background: rgba(22,163,74,0.15);  border: 2px solid #16a34a; color: #86efac; }
+    .sstep.fail .sstep-num { background: rgba(220,38,38,0.15);  border: 2px solid #dc2626; color: #fca5a5; }
+    .sstep.comp .sstep-num { background: rgba(217,119,6,0.15);  border: 2px solid #d97706; color: #fde68a; }
+    .sstep-body { flex: 1; padding-top: 6px; }
+    .sstep-label { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+    .sstep.ok   .sstep-label { color: #86efac; }
+    .sstep.fail .sstep-label { color: #fca5a5; }
+    .sstep.comp .sstep-label { color: #fde68a; }
+    .sstep-desc { font-size: 12px; color: var(--text-dim); line-height: 1.6; }
+    .sstep-arrow {
+      display: inline-block; margin: 8px 0 0 52px;
+      font-family: var(--mono); font-size: 11px; color: var(--warn-col);
+    }
+
+    .saga-note {
+      border-radius: 6px; padding: 14px 16px; font-size: 12px; line-height: 1.75;
+      margin-bottom: 16px;
+    }
+    .saga-note.purple { background: rgba(124,58,237,0.08); border: 1px solid rgba(124,58,237,0.25); color: #c4b5fd; }
+    .saga-note.green  { background: rgba(5,150,105,0.08);  border: 1px solid rgba(5,150,105,0.25);  color: #6ee7b7; }
+    .saga-note.yellow { background: rgba(217,119,6,0.08);  border: 1px solid rgba(217,119,6,0.25);  color: #fde68a; }
+
+    /* ══════════════
+       RISK PANEL
+    ══════════════ */
+    .risk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
+    .risk-card { border-radius: 8px; border: 1px solid var(--border); overflow: hidden; background: var(--surface); }
+    .risk-card-header {
+      padding: 12px 16px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 10px;
+    }
+    .risk-icon { font-size: 18px; flex-shrink: 0; }
+    .risk-title { font-size: 13px; font-weight: 700; color: #fff; }
+    .risk-sev {
+      margin-left: auto; font-family: var(--mono); font-size: 9px; font-weight: 700;
+      letter-spacing: 1px; padding: 3px 8px; border-radius: 2px; text-transform: uppercase;
+    }
+    .sev-h { background: rgba(220,38,38,0.2);  color: #fca5a5; border: 1px solid rgba(220,38,38,0.4); }
+    .sev-m { background: rgba(217,119,6,0.2);  color: #fcd34d; border: 1px solid rgba(217,119,6,0.4); }
+    .sev-l { background: rgba(22,163,74,0.2);  color: #86efac; border: 1px solid rgba(22,163,74,0.4); }
+    .risk-body { padding: 14px 16px; }
+    .risk-desc { font-size: 12px; color: var(--text-dim); line-height: 1.7; margin-bottom: 12px; }
+    .risk-fix {
+      font-size: 11.5px; color: #6ee7b7;
+      background: rgba(5,150,105,0.08); border: 1px solid rgba(5,150,105,0.2);
+      border-radius: 4px; padding: 8px 12px; line-height: 1.6;
+    }
+    .risk-fix strong { color: #a7f3d0; }
+
+    /* ══════════════
+       VERDICT
+    ══════════════ */
+    .verdict-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 28px; }
+    @media (max-width: 680px) { .verdict-grid { grid-template-columns: 1fr; } }
+    .verdict-card { border-radius: 8px; border: 1px solid var(--border); padding: 20px; background: var(--surface); }
+    .verdict-card.sync  { border-color: rgba(37,99,235,0.3);  background: rgba(37,99,235,0.05); }
+    .verdict-card.async { border-color: rgba(5,150,105,0.3);  background: rgba(5,150,105,0.05); }
+    .verdict-title { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+    .verdict-card.sync  .verdict-title { color: #93c5fd; }
+    .verdict-card.async .verdict-title { color: #6ee7b7; }
+    .verdict-sub { font-size: 11px; color: var(--text-dim); margin-bottom: 14px; }
+    .verdict-list { list-style: none; display: flex; flex-direction: column; gap: 7px; }
+    .verdict-list li { font-size: 12px; color: var(--text); line-height: 1.5; display: flex; gap: 8px; }
+    .verdict-list li::before { content: attr(data-icon); flex-shrink: 0; }
+    .recommendation {
+      border-radius: 8px; border: 1px solid rgba(5,150,105,0.3);
+      background: rgba(5,150,105,0.07); padding: 20px 24px;
+    }
+    .recommendation h3 { font-size: 13px; font-weight: 700; color: #6ee7b7; margin-bottom: 10px; }
+    .recommendation p  { font-size: 12.5px; color: var(--text-dim); line-height: 1.85; }
+    .recommendation strong { color: var(--text); }
+    .mono-s { font-family: var(--mono); font-size: 11px; background: #1f2937; border: 1px solid #374151; padding: 1px 5px; border-radius: 3px; color: #f59e0b; }
+  </style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="hero-tag">Architecture Review · v3</div>
+  <h1>同步下單 vs 非同步下單流程比較</h1>
+  <p>策略：保留 DB 前置驗證確保正確性，<strong style="color:#d4dde8">建單本體與建單後回查全部延後至 Consumer 非同步執行</strong>，DB 不在建單關鍵路徑上</p>
+</div>
+
+<div class="tab-nav">
+  <button class="tab-btn active" onclick="switchTab('flow',this)">📋 流程對比</button>
+  <button class="tab-btn" onclick="switchTab('compare',this)">⚖️ 優缺點比較</button>
+  <button class="tab-btn" onclick="switchTab('saga',this)">🔁 Saga 說明</button>
+  <button class="tab-btn" onclick="switchTab('risk',this)">⚠️ 風險與對策</button>
+  <button class="tab-btn" onclick="switchTab('verdict',this)">✅ 建議結論</button>
+</div>
+
+<div class="main">
+
+  <!-- ══════════════════
+       PANEL 1 : FLOW
+  ══════════════════ -->
+  <div class="panel active" id="panel-flow">
+    <div class="flow-compare">
+
+      <!-- ── 同步 ── -->
+      <div class="flow-card sync">
+        <div class="flow-card-header">
+          <div class="flow-card-title">🔵 現行：同步下單</div>
+          <div class="flow-card-sub">confirmPayment() — 全流程在 API Thread 內同步完成才回應</div>
+        </div>
+        <div class="flow-card-body">
+
+          <div class="fstep s-same">
+            <div class="fstep-dot">①</div>
+            <div class="fstep-content">
+              <div class="fstep-label">前置驗證</div>
+              <div class="fstep-desc">PackageTourOrder、紅利點數、價格等級、折價券剩餘數量</div>
+              <div class="fstep-tags"><span class="ftag db-r">DB R ×4</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-same">
+            <div class="fstep-dot">②</div>
+            <div class="fstep-content">
+              <div class="fstep-label">建立付款設定</div>
+              <div class="fstep-desc">PaymentSettingDetail 寫入，含 transactionId</div>
+              <div class="fstep-tags"><span class="ftag db-w">DB W</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-same">
+            <div class="fstep-dot">③</div>
+            <div class="fstep-content">
+              <div class="fstep-label">逐筆套票訂單處理</div>
+              <div class="fstep-desc">for each PackageTourOrder：付款期限、VTO 旅客資料、紅利扣點記錄</div>
+              <div class="fstep-tags"><span class="ftag db-w">DB W ×N</span><span class="ftag db-r">DB R/W ×N</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-same">
+            <div class="fstep-dot">④</div>
+            <div class="fstep-content">
+              <div class="fstep-label">訂單狀態確認</div>
+              <div class="fstep-desc">Payment.status = CONFIRM，寫入 confirmDate</div>
+              <div class="fstep-tags"><span class="ftag db-w">DB W</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-same">
+            <div class="fstep-dot">⑤</div>
+            <div class="fstep-content">
+              <div class="fstep-label">重算金額</div>
+              <div class="fstep-desc">calculatePayment()：重查訂單、算折扣、寫運費、存最終金額</div>
+              <div class="fstep-tags"><span class="ftag db-r">DB R</span><span class="ftag db-w">DB W ×2</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-same">
+            <div class="fstep-dot">⑥</div>
+            <div class="fstep-content">
+              <div class="fstep-label">折價券確認</div>
+              <div class="fstep-desc">Lua Script 原子扣折價券 Redis 餘額；更新 PromoCodeOrder DB 狀態</div>
+              <div class="fstep-tags"><span class="ftag re-w">Redis Lua</span><span class="ftag db-w">DB W ×2</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-same">
+            <div class="fstep-dot">⑦</div>
+            <div class="fstep-content">
+              <div class="fstep-label">建立發票</div>
+              <div class="fstep-desc">invoiceService.processGenerateInvoice()</div>
+              <div class="fstep-tags"><span class="ftag db-w">DB W</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-same">
+            <div class="fstep-dot">⑧</div>
+            <div class="fstep-content">
+              <div class="fstep-label">旅客資料寫入</div>
+              <div class="fstep-desc">序列化聯絡資料到 Payment.userData</div>
+              <div class="fstep-tags"><span class="ftag db-w">DB W</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-same">
+            <div class="fstep-dot">⑨</div>
+            <div class="fstep-content">
+              <div class="fstep-label">外部訂單確認</div>
+              <div class="fstep-desc">ExternalOrderMapping 建立，觸發外部系統</div>
+              <div class="fstep-tags"><span class="ftag db-r">DB R</span><span class="ftag db-w">DB R/W</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-same">
+            <div class="fstep-dot">⑩</div>
+            <div class="fstep-content">
+              <div class="fstep-label">扣庫存主流程</div>
+              <div class="fstep-desc">JVM Lock → checkInventory（DB+Redis 雙驗）→ occupyPaymentInventory（ZINCRBY 多層 ZSET）</div>
+              <div class="fstep-tags">
+                <span class="ftag jvm">JVM Lock</span>
+                <span class="ftag db-r">DB R ×4N</span>
+                <span class="ftag re-r">Redis R ×2N</span>
+                <span class="ftag re-w">Redis W ×4N</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="fstep s-same">
+            <div class="fstep-dot">⑪</div>
+            <div class="fstep-content">
+              <div class="fstep-label">清除外部訂單 Redis + 稽核 Log</div>
+              <div class="fstep-desc">HDEL confirmExternalOrderList、寫 ChangeLog</div>
+              <div class="fstep-tags"><span class="ftag re-w">Redis W</span><span class="ftag db-w">DB W</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-err">
+            <div class="fstep-dot">!</div>
+            <div class="fstep-content">
+              <div class="fstep-label">例外回復（佔用庫存失敗時）</div>
+              <div class="fstep-desc">逐一反向 ZINCRBY ×5N；折價券需人工處理</div>
+              <div class="fstep-tags"><span class="ftag danger">Redis 反向回復 ×5N</span></div>
+            </div>
+          </div>
+
+          <div class="flow-callout blue">
+            ⏱ <strong>用戶等待：</strong>全部 11 步完成才回應。高峰期 RT 拉長，DB 連線長時間佔用。
+          </div>
+        </div>
+      </div>
+
+      <!-- ── 非同步 ── -->
+      <div class="flow-card async">
+        <div class="flow-card-header">
+          <div class="flow-card-title">🟢 新方案：非同步下單</div>
+          <div class="flow-card-sub">完整 DB 前置驗證 → Redis 預扣 → Kafka → Consumer 建單（建單本體與後續回查全部非同步）</div>
+        </div>
+        <div class="flow-card-body">
+
+          <div class="seg-label">同步段（API Thread）</div>
+
+          <div class="fstep s-same">
+            <div class="fstep-dot">①</div>
+            <div class="fstep-content">
+              <div class="fstep-label">完整前置驗證（保留不變）</div>
+              <div class="fstep-desc">PackageTourOrder、紅利點數、價格等級、折價券剩餘數量。與現行相同，確保可下單條件成立</div>
+              <div class="fstep-tags"><span class="ftag db-r">DB R ×4</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-new">
+            <div class="fstep-dot">②</div>
+            <div class="fstep-content">
+              <div class="fstep-label">Redis Lua 原子預扣庫存</div>
+              <div class="fstep-desc">單一 Lua Script 原子執行：讀取 SaleItem / Contract / BookingSetting 庫存 → 全部充足才一次性扣減，不足則整體 abort，不留中間狀態</div>
+              <div class="fstep-tags"><span class="ftag re-w">Redis Lua（原子）</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-new">
+            <div class="fstep-dot">③</div>
+            <div class="fstep-content">
+              <div class="fstep-label">預扣 Key 設 TTL</div>
+              <div class="fstep-desc">對本次預扣記錄設 TTL（例：10 分鐘）。Consumer 建單前若超時，Redis 自動釋放庫存</div>
+              <div class="fstep-tags"><span class="ftag re-w">Redis TTL</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-new">
+            <div class="fstep-dot">④</div>
+            <div class="fstep-content">
+              <div class="fstep-label">Kafka Produce（帶完整下單資訊）</div>
+              <div class="fstep-desc">Payload 攜帶所有建單所需欄位：paymentNo、userId、商品明細、金額、折價券、旅客資料。Consumer 不需再回查</div>
+              <div class="fstep-tags"><span class="ftag kafka">Kafka Produce</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-new">
+            <div class="fstep-dot">⑤</div>
+            <div class="fstep-content">
+              <div class="fstep-label">立刻回應用戶「預扣成功，建單中」</div>
+              <div class="fstep-desc">返回 paymentNo + 狀態查詢 endpoint。用戶可 polling 或等待 WebSocket / Push 通知</div>
+              <div class="fstep-tags"><span class="ftag ok">HTTP 202 Accepted</span></div>
+            </div>
+          </div>
+
+          <div class="seg-label">Consumer 非同步段（建單本體，延後執行）</div>
+
+          <div class="fstep s-async">
+            <div class="fstep-dot">⑥</div>
+            <div class="fstep-content">
+              <div class="fstep-label">Consumer 消費 + 冪等檢查</div>
+              <div class="fstep-desc">以 paymentNo 為冪等 key 查 DB，確認未建過才繼續，防止 at-least-once 重複消費</div>
+              <div class="fstep-tags"><span class="ftag db-r">DB R（冪等查詢）</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-async">
+            <div class="fstep-dot">⑦</div>
+            <div class="fstep-content">
+              <div class="fstep-label">驗 TTL 仍有效</div>
+              <div class="fstep-desc">確認預扣 key 尚未過期，若已過期則走補償流程，不繼續建單</div>
+              <div class="fstep-tags"><span class="ftag re-r">Redis R（TTL 確認）</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-async">
+            <div class="fstep-dot">⑧</div>
+            <div class="fstep-content">
+              <div class="fstep-label">建立付款設定 + 逐筆套票訂單</div>
+              <div class="fstep-desc">從 Kafka payload 取欄位批次寫入：PaymentSettingDetail、PackageTourOrder、VTO 旅客資料、紅利扣點記錄。<strong style="color:#d4dde8">不需再回查 DB</strong></div>
+              <div class="fstep-tags"><span class="ftag db-w">DB W（批次，從 payload 取值）</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-async">
+            <div class="fstep-dot">⑨</div>
+            <div class="fstep-content">
+              <div class="fstep-label">重算金額 + 折價券確認 + 發票</div>
+              <div class="fstep-desc">calculatePayment()、Lua Script 折價券扣款（最後一步才扣，減少補償範圍）、發票建立</div>
+              <div class="fstep-tags"><span class="ftag db-w">DB W</span><span class="ftag re-w">Redis Lua</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-async">
+            <div class="fstep-dot">⑩</div>
+            <div class="fstep-content">
+              <div class="fstep-label">外部訂單確認 + 訂單狀態 CONFIRM + 稽核 Log</div>
+              <div class="fstep-desc">ExternalOrderMapping 建立、Payment.status = CONFIRM、ChangeLog 寫入</div>
+              <div class="fstep-tags"><span class="ftag db-w">DB W</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-async">
+            <div class="fstep-dot">⑪</div>
+            <div class="fstep-content">
+              <div class="fstep-label">通知用戶完成</div>
+              <div class="fstep-desc">WebSocket / Push / Email 推送訂單確認結果</div>
+              <div class="fstep-tags"><span class="ftag ok">推播通知</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-err">
+            <div class="fstep-dot">!</div>
+            <div class="fstep-content">
+              <div class="fstep-label">Consumer 失敗 → Saga 補償</div>
+              <div class="fstep-desc">退還 Redis 預扣庫存 → Payment 標記 FAILED → 通知用戶重新下單（詳見 Saga 說明頁籤）</div>
+              <div class="fstep-tags"><span class="ftag re-w">Redis 回退</span><span class="ftag db-w">DB 狀態更新</span><span class="ftag kafka">補償事件</span></div>
+            </div>
+          </div>
+
+          <div class="flow-callout green">
+            ⚡ <strong>同步段（①~⑤）目標 &lt; 200ms</strong>：DB 前置驗證保留，確保可下單條件完整。建單本體與建單後所有回查全部移到 Consumer，DB 寫入不在關鍵路徑。
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="flow-legend">
+      <span style="color:var(--text-dim)">圖例：</span>
+      <span style="color:#d4dde8">⚪ 保留不變</span>
+      <span style="color:#6ee7b7">🟢 新增 / 調整</span>
+      <span style="color:#fde68a">🟡 從同步移出（延後）</span>
+      <span style="color:#c4b5fd">🟣 Consumer 非同步執行</span>
+      <span style="color:#fca5a5">🔴 失敗補償路徑</span>
+    </div>
+  </div>
+
+  <!-- ══════════════════
+       PANEL 2 : COMPARE
+  ══════════════════ -->
+  <div class="panel" id="panel-compare">
+
+    <div class="compare-section">
+      <div class="compare-section-title">效能與吞吐量</div>
+      <table class="compare-table">
+        <thead><tr>
+          <th>指標</th><th>🔵 同步（現行）</th><th>🟢 非同步（新方案）</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td>用戶感知 RT</td>
+            <td><span class="chip bad">慢</span><br>所有 DB/Redis 操作完成才回應，高峰可能 2–10 秒</td>
+            <td><span class="chip warn">中等改善</span><br>前置驗證仍查 DB（×4），但建單寫入全部移除，目標 &lt; 200ms</td>
+          </tr>
+          <tr>
+            <td>DB 連線壓力</td>
+            <td><span class="chip bad">高</span><br>建單期間持續佔用連線，高峰連線池耗盡</td>
+            <td><span class="chip good">顯著降低</span><br>同步段只有 DB R（讀取驗證），所有 DB W 移到 Consumer 非同步排隊</td>
+          </tr>
+          <tr>
+            <td>DB 寫入壓力</td>
+            <td><span class="chip bad">高</span><br>同步寫入 10+ 筆，高峰直接打滿</td>
+            <td><span class="chip good">Consumer 控速</span><br>DB W 全部由 Consumer 消化，可控制並發數，天然削峰</td>
+          </tr>
+          <tr>
+            <td>系統吞吐量</td>
+            <td><span class="chip bad">受限</span><br>瓶頸 = DB 連線數 ÷ 平均 RT</td>
+            <td><span class="chip good">大幅提升</span><br>同步段無 DB W，QPS 可線性擴展；Consumer partition 水平擴展消費速度</td>
+          </tr>
+          <tr>
+            <td>Redis 壓力</td>
+            <td><span class="chip warn">中</span><br>JVM Lock 保護，但跨節點仍有競爭</td>
+            <td><span class="chip warn">高峰承壓</span><br>預扣 Lua 成關鍵路徑，Redis 需高可用（Sentinel / Cluster）</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="compare-section">
+      <div class="compare-section-title">資料一致性與正確性</div>
+      <table class="compare-table">
+        <thead><tr>
+          <th>指標</th><th>🔵 同步（現行）</th><th>🟢 非同步（新方案）</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td>下單前置驗證</td>
+            <td><span class="chip good">完整</span><br>DB 四次查詢完整驗證後才建單</td>
+            <td><span class="chip good">完整保留</span><br>同步段保留完整 DB 前置驗證，可下單條件與現行相同</td>
+          </tr>
+          <tr>
+            <td>超賣風險</td>
+            <td><span class="chip good">低</span><br>JVM Lock + DB+Redis 雙驗</td>
+            <td><span class="chip good">低</span><br>Lua Script 原子預扣，庫存不足則 abort，不進 Kafka</td>
+          </tr>
+          <tr>
+            <td>訂單即時可查</td>
+            <td><span class="chip good">立刻</span><br>回應時 Payment 已是 CONFIRM</td>
+            <td><span class="chip warn">延遲</span><br>回應時為預扣成功，需 Consumer 完成後才是 CONFIRM</td>
+          </tr>
+          <tr>
+            <td>建單資料完整性</td>
+            <td><span class="chip good">高</span><br>同流程內多次回查確認</td>
+            <td><span class="chip warn">依賴 Payload 設計</span><br>Consumer 從 Kafka payload 取值建單，payload 必須完整，漏欄位建單就會出錯</td>
+          </tr>
+          <tr>
+            <td>折價券一致性</td>
+            <td><span class="chip warn">有缺口</span><br>庫存失敗時折價券需人工回復</td>
+            <td><span class="chip warn">改善但仍需設計</span><br>折價券扣款移到 Consumer 最後一步，失敗時 Saga 可自動補償</td>
+          </tr>
+          <tr>
+            <td>冪等需求</td>
+            <td><span class="chip good">低</span></td>
+            <td><span class="chip bad">高</span><br>Consumer 需以 paymentNo 嚴格去重，DB unique constraint 作最後防線</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="compare-section">
+      <div class="compare-section-title">工程複雜度與維運</div>
+      <table class="compare-table">
+        <thead><tr>
+          <th>指標</th><th>🔵 同步（現行）</th><th>🟢 非同步（新方案）</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td>架構複雜度</td>
+            <td><span class="chip good">低</span><br>單一流程，一條 call stack</td>
+            <td><span class="chip bad">高</span><br>API → Kafka → Consumer → Saga，需 Distributed Tracing</td>
+          </tr>
+          <tr>
+            <td>Kafka Payload 設計</td>
+            <td><span class="chip neu">N/A</span></td>
+            <td><span class="chip warn">關鍵</span><br>所有建單欄位必須在 Produce 時就塞進 payload，後續版本欄位異動需要 schema 演進策略</td>
+          </tr>
+          <tr>
+            <td>前端改動</td>
+            <td><span class="chip good">無</span></td>
+            <td><span class="chip warn">需配合</span><br>「建單中」UI、輪詢或 WebSocket 訂閱、逾時提示、失敗引導重試</td>
+          </tr>
+          <tr>
+            <td>導入成本</td>
+            <td><span class="chip good">N/A</span></td>
+            <td><span class="chip bad">中高</span><br>拆分 confirmPayment() 同步/非同步段、Consumer 開發、Saga 補償、前端配合</td>
+          </tr>
+          <tr>
+            <td>可觀測性需求</td>
+            <td><span class="chip neu">一般</span></td>
+            <td><span class="chip bad">高</span><br>需監控 Kafka lag、Consumer 成功率、PENDING 超時數、Redis 與 DB 庫存差值</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+
+  <!-- ══════════════════
+       PANEL 3 : SAGA
+  ══════════════════ -->
+  <div class="panel" id="panel-saga">
+
+    <div class="saga-intro">
+      Saga 是一種處理<strong>跨步驟、跨服務失敗補償</strong>的設計模式。<br>
+      傳統 DB Transaction 失敗可以 <span class="highlight">ROLLBACK</span>，但一旦跨越了 Redis、Kafka、外部 API，就沒有統一的 rollback 機制。<br>
+      Saga 的核心概念是：<strong>每一個正向步驟，都要預先設計一個對應的「反向補償操作」</strong>，失敗時從斷點往回依序執行補償，代替 rollback。
+    </div>
+
+    <div class="saga-compare">
+      <div class="saga-box db">
+        <div class="saga-box-header">🗄️ 傳統 DB Transaction</div>
+        <div class="saga-box-body">
+          所有操作在同一個 Transaction 內，任一步驟失敗，DB 引擎自動 ROLLBACK 所有已執行的變更。<br><br>
+          <strong style="color:var(--text)">前提：</strong>所有操作都在同一個 DB 連線內，不跨服務。
+          <div class="code-block"><span class="c-blue">BEGIN</span>
+  INSERT orders ...       <span class="c-green">✓</span>
+  UPDATE inventory ...    <span class="c-green">✓</span>
+  INSERT invoice ...      <span class="c-red">✗ 失敗</span>
+<span class="c-blue">ROLLBACK</span>  <span class="c-gray">← DB 自動回到起點</span></div>
+        </div>
+      </div>
+      <div class="saga-box saga">
+        <div class="saga-box-header">🔁 Saga Pattern</div>
+        <div class="saga-box-body">
+          每個步驟獨立執行，沒有統一 rollback。失敗時，靠<strong style="color:#fde68a">預先定義的補償操作</strong>手動逐步回退。<br><br>
+          <strong style="color:var(--text)">前提：</strong>操作跨越 Redis、Kafka、外部 API 等，無法共享 Transaction。
+          <div class="code-block"><span class="c-green">步驟1 成功</span> → Redis 預扣庫存
+<span class="c-green">步驟2 成功</span> → Kafka Produce
+<span class="c-green">步驟3 成功</span> → DB 建立訂單
+<span class="c-red">步驟4 失敗</span> → 折價券扣款失敗
+          ↓
+<span class="c-yellow">補償3</span> → DB 刪除已建訂單
+<span class="c-yellow">補償1</span> → Redis 退還預扣庫存
+<span class="c-yellow">通知</span>  → 告訴用戶下單失敗</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="saga-flow-section">
+      <div class="saga-section-title">本系統的 Saga 補償流程（Consumer 失敗時）</div>
+
+      <div class="saga-note purple">
+        📌 <strong>重要原則：</strong>補償要「從哪裡斷，從哪裡退」。步驟3失敗，只需退步驟1和2，不需要退步驟4（還沒執行到）。每個補償操作本身也需要冪等設計。
+      </div>
+
+      <div class="saga-steps">
+        <div class="sstep ok">
+          <div class="sstep-num">1</div>
+          <div class="sstep-body">
+            <div class="sstep-label">Redis Lua 原子預扣庫存 ✅</div>
+            <div class="sstep-desc">SaleItem / Contract / BookingSetting 庫存全部扣除，預扣 key 設 TTL</div>
+          </div>
+        </div>
+
+        <div class="sstep ok">
+          <div class="sstep-num">2</div>
+          <div class="sstep-body">
+            <div class="sstep-label">Kafka Produce ✅</div>
+            <div class="sstep-desc">下單事件進入 Kafka，Consumer 開始消費</div>
+          </div>
+        </div>
+
+        <div class="sstep ok">
+          <div class="sstep-num">3</div>
+          <div class="sstep-body">
+            <div class="sstep-label">Consumer：冪等確認 + TTL 驗證 ✅</div>
+            <div class="sstep-desc">確認未重複建單、預扣 key 未過期</div>
+          </div>
+        </div>
+
+        <div class="sstep ok">
+          <div class="sstep-num">4</div>
+          <div class="sstep-body">
+            <div class="sstep-label">Consumer：DB 批次建單 ✅</div>
+            <div class="sstep-desc">PaymentSettingDetail、PackageTourOrder、旅客資料、紅利記錄寫入</div>
+          </div>
+        </div>
+
+        <div class="sstep fail">
+          <div class="sstep-num">5</div>
+          <div class="sstep-body">
+            <div class="sstep-label">Consumer：折價券扣款 ❌ 失敗</div>
+            <div class="sstep-desc">Redis Lua Script 執行失敗（例：折價券已被其他訂單用掉、Redis 暫時不可用）</div>
+          </div>
+        </div>
+
+        <div class="sstep-arrow">↓ 觸發 Saga 補償，從斷點往回退</div>
+
+        <div class="sstep comp">
+          <div class="sstep-num">C4</div>
+          <div class="sstep-body">
+            <div class="sstep-label">補償步驟4：刪除已建的 DB 記錄</div>
+            <div class="sstep-desc">以 paymentNo 為 key，刪除本次建立的 PaymentSettingDetail、PackageTourOrder 等記錄；或將 Payment.status 標記為 FAILED（推薦，保留稽核軌跡）</div>
+          </div>
+        </div>
+
+        <div class="sstep comp">
+          <div class="sstep-num">C1</div>
+          <div class="sstep-body">
+            <div class="sstep-label">補償步驟1：退還 Redis 預扣庫存</div>
+            <div class="sstep-desc">反向 ZINCRBY 退還所有已預扣的 SaleItem / Contract / BookingSetting 庫存，需冪等保護（確認預扣 key 存在才退）</div>
+          </div>
+        </div>
+
+        <div class="sstep comp">
+          <div class="sstep-num">通知</div>
+          <div class="sstep-body">
+            <div class="sstep-label">通知用戶下單失敗，請重新嘗試</div>
+            <div class="sstep-desc">WebSocket / Push / Email，說明失敗原因（庫存不足 / 折價券無效 / 系統問題）</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="saga-flow-section">
+      <div class="saga-section-title">特殊情境：TTL 過期才被 Consumer 消費</div>
+      <div class="saga-note yellow">
+        ⏱ <strong>情境：</strong>Consumer 積壓嚴重，消費到這筆訊息時，Redis 預扣 key 已超過 TTL 被自動釋放。此時庫存已還給其他人，不能繼續建單。
+      </div>
+      <div class="code-block"><span class="c-gray">// Consumer 消費時</span>
+const lock = await redis.zscore(<span class="c-yellow">"fontrip:preoccupy:lock"</span>, paymentNo)
+
+<span class="c-blue">if</span> (!lock) {
+  <span class="c-gray">// 預扣 key 已過期，庫存已釋放</span>
+  await db.updatePaymentStatus(paymentNo, <span class="c-red">'FAILED'</span>)
+  await notify(userId, <span class="c-yellow">"下單逾時，請重新操作"</span>)
+  <span class="c-blue">return</span>  <span class="c-gray">// 不繼續建單，不需要補償庫存（TTL 已自動釋放）</span>
+}
+
+<span class="c-gray">// 正常繼續建單...</span></div>
+    </div>
+
+    <div class="saga-flow-section">
+      <div class="saga-section-title">設計原則與注意事項</div>
+      <div class="saga-note green">
+        ✅ <strong>補償操作必須冪等：</strong>補償本身也可能失敗後重試，例如「退還 Redis 庫存」執行兩次，不能讓庫存被多退。<br>
+        ✅ <strong>折價券扣款放最後：</strong>越晚扣，失敗時需要補償的範圍越小。<br>
+        ✅ <strong>保留失敗記錄：</strong>建議將 Payment 標記為 FAILED 而不是刪除，保留稽核軌跡，方便排查問題。<br>
+        ✅ <strong>補償失敗怎麼辦：</strong>補償操作本身也可能失敗（例如 Redis 掛掉），需要 dead letter queue 或 alert，轉人工處理。這是 Saga 無法完全避免的最終邊界。
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ══════════════════
+       PANEL 4 : RISK
+  ══════════════════ -->
+  <div class="panel" id="panel-risk">
+    <div style="margin-bottom:20px; font-size:12.5px; color:var(--text-dim); line-height:1.8;">
+      針對「完整 DB 前置驗證 → Redis 預扣 → Kafka → Consumer 建單」架構，<strong style="color:var(--text)">結合現有系統特性</strong>的主要風險點。
+    </div>
+    <div class="risk-grid">
+
+      <div class="risk-card">
+        <div class="risk-card-header">
+          <div class="risk-icon">⚡</div>
+          <div><div class="risk-title">Redis 預扣成功，Kafka Produce 失敗</div></div>
+          <div class="risk-sev sev-h">高</div>
+        </div>
+        <div class="risk-body">
+          <div class="risk-desc">Redis 已扣庫存但事件沒進 Kafka（網路抖動、Kafka 暫時不可用），Consumer 永遠不會收到，庫存白白佔用直到 TTL 過期。</div>
+          <div class="risk-fix"><strong>對策：</strong> Kafka Produce 失敗時立即同步回退 Redis 預扣（Lua 反向操作），整個同步段視為失敗回應用戶，靠 TTL 作最後保底。</div>
+        </div>
+      </div>
+
+      <div class="risk-card">
+        <div class="risk-card-header">
+          <div class="risk-icon">📦</div>
+          <div><div class="risk-title">Kafka Payload 缺少欄位導致建單失敗</div></div>
+          <div class="risk-sev sev-h">高</div>
+        </div>
+        <div class="risk-body">
+          <div class="risk-desc">Consumer 不再回查 DB，完全依賴 Kafka payload 建單。若 Produce 時漏帶欄位，或日後欄位新增但 payload schema 未同步更新，Consumer 拿到的資料不完整就會建單失敗。</div>
+          <div class="risk-fix"><strong>對策：</strong> 使用 Schema Registry（例如 Confluent Schema Registry + Avro / JSON Schema）管理 payload 格式；Produce 端加 schema 驗證，欄位不完整就不 Produce。</div>
+        </div>
+      </div>
+
+      <div class="risk-card">
+        <div class="risk-card-header">
+          <div class="risk-icon">🔄</div>
+          <div><div class="risk-title">Consumer 重試造成重複建單</div></div>
+          <div class="risk-sev sev-h">高</div>
+        </div>
+        <div class="risk-body">
+          <div class="risk-desc">Kafka at-least-once 語意，Consumer 崩潰後重啟同一訊息再次消費，若建單非冪等，產生兩張 Payment，造成重複扣款或重複發票。</div>
+          <div class="risk-fix"><strong>對策：</strong> 以 <code class="mono-s">paymentNo</code> 為冪等 key，Consumer 建單前先查 DB。資料庫加 unique constraint 作最後防線，捕捉 duplicate key exception 視為成功跳過。</div>
+        </div>
+      </div>
+
+      <div class="risk-card">
+        <div class="risk-card-header">
+          <div class="risk-icon">⏱️</div>
+          <div><div class="risk-title">Consumer 建單超過 Redis TTL</div></div>
+          <div class="risk-sev sev-m">中</div>
+        </div>
+        <div class="risk-body">
+          <div class="risk-desc">Consumer 積壓嚴重，消費到這筆時預扣 key 已過期，Redis 自動釋放庫存。若 Consumer 不驗 TTL 就繼續建單，會建出一張沒有對應庫存扣減的訂單。</div>
+          <div class="risk-fix"><strong>對策：</strong> Consumer 建單前先 ZSCORE 確認預扣 key 仍存在，不存在則走 FAILED 流程通知用戶。TTL 設定需大於 Consumer 最大可能 lag（需壓測評估）。</div>
+        </div>
+      </div>
+
+      <div class="risk-card">
+        <div class="risk-card-header">
+          <div class="risk-icon">🏗️</div>
+          <div><div class="risk-title">BookingSetting Mutex 初始化 Race Condition</div></div>
+          <div class="risk-sev sev-m">中</div>
+        </div>
+        <div class="risk-body">
+          <div class="risk-desc">現行 ZADD Mutex 是多步非原子操作。大流量下多請求同時到，若 bookingSettingId 尚未初始化，放進預扣 Lua 前需重新設計，否則初始值可能被競爭覆蓋。</div>
+          <div class="risk-fix"><strong>對策：</strong> 將初始化邏輯整合進預扣 Lua Script，以 <code class="mono-s">SET NX</code> 替代 ZADD Mutex，Lua 內原子完成「初始化判斷 → 設初始值 → ZINCRBY 預扣」三步。</div>
+        </div>
+      </div>
+
+      <div class="risk-card">
+        <div class="risk-card-header">
+          <div class="risk-icon">📊</div>
+          <div><div class="risk-title">Consumer 積壓，PENDING 過久</div></div>
+          <div class="risk-sev sev-m">中</div>
+        </div>
+        <div class="risk-body">
+          <div class="risk-desc">大流量下 Consumer 處理不及，訂單長時間停留 PENDING，超過用戶心理預期造成客訴和重複下單。</div>
+          <div class="risk-fix"><strong>對策：</strong> Consumer partition 數可水平擴展；設 PENDING 超時機制（e.g. 5 分鐘後自動 FAILED 並退 Redis 庫存）；監控 Kafka consumer lag，超閾值自動告警。</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ══════════════════
+       PANEL 5 : VERDICT
+  ══════════════════ -->
+  <div class="panel" id="panel-verdict">
+    <div class="verdict-grid">
+      <div class="verdict-card sync">
+        <div class="verdict-title">🔵 同步下單（現行）</div>
+        <div class="verdict-sub">繼續維持的理由</div>
+        <ul class="verdict-list">
+          <li data-icon="✅">邏輯集中，Debug 快，工程師認知負擔低</li>
+          <li data-icon="✅">訂單狀態立刻確定，用戶體驗直覺</li>
+          <li data-icon="✅">折價券、庫存、發票一致性有保障</li>
+          <li data-icon="✅">不需 Kafka、Consumer、Saga 維運成本</li>
+          <li data-icon="❌">高峰 QPS 受 DB W 連線數制約，難爆發</li>
+          <li data-icon="❌">每筆下單 RT 隨流量劣化</li>
+          <li data-icon="❌">JVM Lock 僅保護單節點，多節點需再處理</li>
+        </ul>
+      </div>
+      <div class="verdict-card async">
+        <div class="verdict-title">🟢 非同步下單（新方案）</div>
+        <div class="verdict-sub">導入的理由</div>
+        <ul class="verdict-list">
+          <li data-icon="✅">前置驗證完整保留，可下單條件與現行相同</li>
+          <li data-icon="✅">DB W 全部移出關鍵路徑，吞吐量大幅提升</li>
+          <li data-icon="✅">Redis Lua 原子預扣，防超賣能力強</li>
+          <li data-icon="✅">Consumer 可水平擴展，處理速度彈性調整</li>
+          <li data-icon="❌">用戶必須接受「建單中」狀態，前端需改動</li>
+          <li data-icon="❌">Kafka payload schema 設計要一次做好，日後演進成本高</li>
+          <li data-icon="❌">Saga 補償、冪等、TTL 監控，工程複雜度上升</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="recommendation">
+      <h3>📌 建議：以此方案為目標，分階段安全導入</h3>
+      <p>
+        此版本（保留完整 DB 前置驗證 + 建單本體非同步）是三個方案中<strong>最平衡</strong>的選擇：正確性不打折，DB 寫入壓力大幅降低，比「完全不查 DB」的極端版本更可控。
+        <br><br>
+        <strong>第一步（低風險，先做）：</strong>設計並確認 Kafka payload schema，確保所有建單欄位都能從 payload 還原，不需要 Consumer 再回查 DB。這是整個方案的地基。
+        <br><br>
+        <strong>第二步（核心）：</strong>實作預扣 Lua Script（含 BookingSetting 初始化原子化）+ Consumer 冪等機制（<code class="mono-s">paymentNo</code> unique constraint）。
+        <br><br>
+        <strong>第三步（特定活動先試）：</strong>以 Feature Flag 控制，對高峰活動啟用非同步路徑，其餘一般下單仍走同步。出問題可立即回切。
+        <br><br>
+        <strong>必須在上線前完成的安全網：</strong>① Produce 失敗的 Redis 即時回退、② PENDING 超時自動釋放庫存、③ Consumer lag 監控告警、④ Redis 與 DB 庫存差值對帳 job。
+      </p>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  function switchTab(id, btn) {
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('panel-' + id).classList.add('active');
+    btn.classList.add('active');
+  }
+</script>
+</body>
+</html>
