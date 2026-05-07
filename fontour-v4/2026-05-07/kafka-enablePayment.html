@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>同步 vs 非同步啟用訂單流程比較 v2</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Noto+Sans+TC:wght@400;500;700&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #080c12;
+      --surface: #0d1220;
+      --surface2: #121826;
+      --border: #1e2d45;
+      --border2: #243348;
+      --text: #d4dde8;
+      --text-dim: #5a7080;
+      --text-muted: #3a4f60;
+      --db-r: #1d4ed8;
+      --db-w: #15803d;
+      --redis-r: #b45309;
+      --redis-w: #b91c1c;
+      --kafka: #7c3aed;
+      --jvm: #6b7280;
+      --ok: #16a34a;
+      --danger: #dc2626;
+      --warn-col: #d97706;
+      --mono: 'IBM Plex Mono', monospace;
+      --sans: 'Noto Sans TC', sans-serif;
+    }
+
+    html { scroll-behavior: smooth; }
+    body { font-family: var(--sans); background: var(--bg); color: var(--text); min-height: 100vh; padding-bottom: 80px; }
+
+    .hero { padding: 44px 24px 32px; text-align: center; border-bottom: 1px solid var(--border); position: relative; overflow: hidden; }
+    .hero::before {
+      content: ''; position: absolute; inset: 0;
+      background: radial-gradient(ellipse 60% 80% at 20% 50%, rgba(37,99,235,0.06) 0%, transparent 60%),
+                  radial-gradient(ellipse 60% 80% at 80% 50%, rgba(5,150,105,0.06) 0%, transparent 60%);
+      pointer-events: none;
+    }
+    .hero-tag { display: inline-block; font-family: var(--mono); font-size: 10px; letter-spacing: 2px; color: var(--text-muted); text-transform: uppercase; border: 1px solid var(--border2); padding: 4px 12px; border-radius: 2px; margin-bottom: 14px; }
+    .hero h1 { font-size: clamp(18px, 3vw, 26px); font-weight: 700; color: #fff; letter-spacing: -0.5px; line-height: 1.3; }
+    .hero p { margin-top: 10px; font-size: 12.5px; color: var(--text-dim); max-width: 700px; margin-inline: auto; line-height: 1.7; }
+
+    .tab-nav { display: flex; justify-content: center; gap: 4px; padding: 18px 24px 0; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+    .tab-btn { font-family: var(--sans); font-size: 12px; font-weight: 500; color: var(--text-dim); background: transparent; border: none; border-bottom: 2px solid transparent; padding: 10px 16px 12px; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active { color: #fff; border-bottom-color: #fff; }
+
+    .main { max-width: 1200px; margin: 0 auto; padding: 0 16px; }
+    .panel { display: none; padding-top: 32px; }
+    .panel.active { display: block; }
+
+    /* FLOW */
+    .flow-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    @media (max-width: 860px) { .flow-compare { grid-template-columns: 1fr; } }
+    .flow-card { border-radius: 8px; border: 1px solid var(--border); overflow: hidden; }
+    .flow-card-header { padding: 14px 18px; border-bottom: 1px solid var(--border); }
+    .flow-card.sync  .flow-card-header { background: rgba(37,99,235,0.08); }
+    .flow-card.async .flow-card-header { background: rgba(5,150,105,0.08); }
+    .flow-card-title { font-size: 13px; font-weight: 700; }
+    .flow-card.sync  .flow-card-title { color: #93c5fd; }
+    .flow-card.async .flow-card-title { color: #6ee7b7; }
+    .flow-card-sub { font-size: 11px; color: var(--text-dim); margin-top: 3px; }
+    .flow-card-body { padding: 16px; background: var(--surface); }
+
+    .fstep { display: flex; position: relative; }
+    .fstep:not(:last-child)::after { content: ''; position: absolute; left: 15px; top: 30px; bottom: -10px; width: 1px; background: var(--border2); }
+    .fstep-dot { width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--border2); display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-family: var(--mono); font-size: 10px; font-weight: 600; color: var(--text-dim); background: var(--surface2); z-index: 1; position: relative; }
+    .fstep-content { flex: 1; padding: 4px 0 18px 12px; }
+    .fstep-label { font-size: 12px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+    .fstep-desc  { font-size: 11px; color: var(--text-dim); line-height: 1.6; }
+    .fstep-tags  { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+
+    .ftag { font-family: var(--mono); font-size: 9px; font-weight: 600; padding: 2px 7px; border-radius: 2px; color: #fff; letter-spacing: 0.3px; }
+    .ftag.db-r   { background: var(--db-r); }
+    .ftag.db-w   { background: var(--db-w); }
+    .ftag.re-r   { background: var(--redis-r); }
+    .ftag.re-w   { background: var(--redis-w); }
+    .ftag.kafka  { background: var(--kafka); }
+    .ftag.jvm    { background: var(--jvm); }
+    .ftag.ok     { background: var(--ok); }
+    .ftag.danger { background: var(--danger); }
+    .ftag.warn   { background: var(--warn-col); }
+    .ftag.ext    { background: #92400e; }
+
+    .fstep.s-same  .fstep-dot { border-color: var(--border2); color: var(--text-dim); }
+    .fstep.s-new   .fstep-dot { border-color: #059669; color: #6ee7b7; background: rgba(5,150,105,0.1); }
+    .fstep.s-new   .fstep-label { color: #6ee7b7; }
+    .fstep.s-async .fstep-dot { border-color: #7c3aed; color: #c4b5fd; background: rgba(124,58,237,0.1); }
+    .fstep.s-async .fstep-label { color: #c4b5fd; }
+    .fstep.s-err   .fstep-dot { border-color: #dc2626; color: #fca5a5; background: rgba(220,38,38,0.1); }
+    .fstep.s-err   .fstep-label { color: #fca5a5; }
+    .fstep.s-moved .fstep-dot { border-color: #ca8a04; color: #fde68a; background: rgba(202,138,4,0.1); }
+    .fstep.s-moved .fstep-label { color: #fde68a; }
+
+    .seg-label { font-size: 9px; font-family: var(--mono); letter-spacing: 1.2px; color: var(--text-muted); text-transform: uppercase; margin: 14px 0 10px; display: flex; align-items: center; gap: 8px; }
+    .seg-label::before, .seg-label::after { content: ''; flex: 1; height: 1px; background: var(--border2); }
+
+    .flow-callout { margin-top: 14px; border-radius: 6px; padding: 11px 14px; font-size: 11.5px; line-height: 1.7; }
+    .flow-callout.blue  { background: rgba(37,99,235,0.08); border: 1px solid rgba(37,99,235,0.2); color: #93c5fd; }
+    .flow-callout.green { background: rgba(5,150,105,0.08); border: 1px solid rgba(5,150,105,0.2); color: #6ee7b7; }
+
+    .flow-legend { margin-top: 20px; padding: 12px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; display: flex; gap: 24px; flex-wrap: wrap; font-size: 11px; color: var(--text-dim); align-items: center; }
+
+    /* COMPARE */
+    .compare-section { margin-bottom: 36px; }
+    .compare-section-title { font-family: var(--mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 14px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+    .compare-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    .compare-table th { text-align: left; padding: 10px 14px; font-size: 11px; font-weight: 700; letter-spacing: 0.4px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    .compare-table th:nth-child(1) { color: var(--text-muted); width: 22%; }
+    .compare-table th:nth-child(2) { color: #93c5fd; background: rgba(37,99,235,0.06); }
+    .compare-table th:nth-child(3) { color: #6ee7b7; background: rgba(5,150,105,0.06); }
+    .compare-table td { padding: 12px 14px; border-bottom: 1px solid var(--border); vertical-align: top; line-height: 1.7; color: var(--text); }
+    .compare-table td:nth-child(1) { color: var(--text-dim); font-weight: 500; font-size: 12px; }
+    .compare-table td:nth-child(2) { background: rgba(37,99,235,0.03); }
+    .compare-table td:nth-child(3) { background: rgba(5,150,105,0.03); }
+    .compare-table tr:hover td { filter: brightness(1.08); }
+
+    .chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 3px; margin: 2px 2px 2px 0; }
+    .chip.good { background: rgba(22,163,74,0.15);  color: #86efac; border: 1px solid rgba(22,163,74,0.3); }
+    .chip.bad  { background: rgba(220,38,38,0.12);  color: #fca5a5; border: 1px solid rgba(220,38,38,0.3); }
+    .chip.warn { background: rgba(217,119,6,0.12);  color: #fcd34d; border: 1px solid rgba(217,119,6,0.3); }
+    .chip.neu  { background: rgba(100,116,139,0.12);color: #94a3b8; border: 1px solid rgba(100,116,139,0.3); }
+
+    /* SAGA */
+    .saga-intro { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px 24px; margin-bottom: 28px; font-size: 13px; color: var(--text-dim); line-height: 1.85; }
+    .saga-intro strong { color: var(--text); }
+    .saga-intro .highlight { display: inline-block; background: rgba(124,58,237,0.12); border: 1px solid rgba(124,58,237,0.3); color: #c4b5fd; border-radius: 4px; padding: 2px 8px; font-size: 12px; }
+
+    .saga-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 28px; }
+    @media (max-width: 720px) { .saga-compare { grid-template-columns: 1fr; } }
+
+    .saga-box { border-radius: 8px; border: 1px solid var(--border); overflow: hidden; background: var(--surface); }
+    .saga-box-header { padding: 12px 16px; border-bottom: 1px solid var(--border); font-size: 12px; font-weight: 700; }
+    .saga-box.old  .saga-box-header { background: rgba(29,78,216,0.08); color: #93c5fd; }
+    .saga-box.saga .saga-box-header { background: rgba(124,58,237,0.08); color: #c4b5fd; }
+    .saga-box-body { padding: 16px; font-size: 12px; color: var(--text-dim); line-height: 1.8; }
+
+    .code-block { font-family: var(--mono); font-size: 11px; line-height: 1.8; background: var(--surface2); border: 1px solid var(--border2); border-radius: 6px; padding: 14px 16px; color: #cbd5e1; white-space: pre; overflow-x: auto; margin: 10px 0; }
+    .code-block .c-green  { color: #86efac; }
+    .code-block .c-red    { color: #fca5a5; }
+    .code-block .c-yellow { color: #fde68a; }
+    .code-block .c-blue   { color: #93c5fd; }
+    .code-block .c-purple { color: #c4b5fd; }
+    .code-block .c-gray   { color: #6b7280; }
+
+    .saga-flow-section { margin-bottom: 28px; }
+    .saga-section-title { font-family: var(--mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 14px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+
+    .saga-steps { display: flex; flex-direction: column; gap: 0; position: relative; }
+    .saga-steps::before { content: ''; position: absolute; left: 20px; top: 0; bottom: 0; width: 2px; background: linear-gradient(180deg, #1e2d45 0%, #374151 40%, #374151 80%, #1e2d45 100%); }
+    .sstep { display: flex; align-items: flex-start; gap: 14px; position: relative; padding: 0 0 20px 0; }
+    .sstep-num { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 12px; font-weight: 700; flex-shrink: 0; z-index: 1; position: relative; }
+    .sstep.ok   .sstep-num { background: rgba(22,163,74,0.15);  border: 2px solid #16a34a; color: #86efac; }
+    .sstep.fail .sstep-num { background: rgba(220,38,38,0.15);  border: 2px solid #dc2626; color: #fca5a5; }
+    .sstep.comp .sstep-num { background: rgba(217,119,6,0.15);  border: 2px solid #d97706; color: #fde68a; }
+    .sstep-body { flex: 1; padding-top: 6px; }
+    .sstep-label { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+    .sstep.ok   .sstep-label { color: #86efac; }
+    .sstep.fail .sstep-label { color: #fca5a5; }
+    .sstep.comp .sstep-label { color: #fde68a; }
+    .sstep-desc { font-size: 12px; color: var(--text-dim); line-height: 1.6; }
+    .sstep-arrow { display: inline-block; margin: 8px 0 0 52px; font-family: var(--mono); font-size: 11px; color: var(--warn-col); }
+
+    .saga-note { border-radius: 6px; padding: 14px 16px; font-size: 12px; line-height: 1.75; margin-bottom: 16px; }
+    .saga-note.purple { background: rgba(124,58,237,0.08); border: 1px solid rgba(124,58,237,0.25); color: #c4b5fd; }
+    .saga-note.green  { background: rgba(5,150,105,0.08);  border: 1px solid rgba(5,150,105,0.25);  color: #6ee7b7; }
+    .saga-note.yellow { background: rgba(217,119,6,0.08);  border: 1px solid rgba(217,119,6,0.25);  color: #fde68a; }
+
+    /* RISK */
+    .risk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
+    .risk-card { border-radius: 8px; border: 1px solid var(--border); overflow: hidden; background: var(--surface); }
+    .risk-card-header { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+    .risk-icon { font-size: 18px; flex-shrink: 0; }
+    .risk-title { font-size: 13px; font-weight: 700; color: #fff; }
+    .risk-sev { margin-left: auto; font-family: var(--mono); font-size: 9px; font-weight: 700; letter-spacing: 1px; padding: 3px 8px; border-radius: 2px; text-transform: uppercase; }
+    .sev-h { background: rgba(220,38,38,0.2);  color: #fca5a5; border: 1px solid rgba(220,38,38,0.4); }
+    .sev-m { background: rgba(217,119,6,0.2);  color: #fcd34d; border: 1px solid rgba(217,119,6,0.4); }
+    .risk-body { padding: 14px 16px; }
+    .risk-desc { font-size: 12px; color: var(--text-dim); line-height: 1.7; margin-bottom: 12px; }
+    .risk-fix { font-size: 11.5px; color: #6ee7b7; background: rgba(5,150,105,0.08); border: 1px solid rgba(5,150,105,0.2); border-radius: 4px; padding: 8px 12px; line-height: 1.6; }
+    .risk-fix strong { color: #a7f3d0; }
+
+    /* VERDICT */
+    .verdict-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 28px; }
+    @media (max-width: 680px) { .verdict-grid { grid-template-columns: 1fr; } }
+    .verdict-card { border-radius: 8px; border: 1px solid var(--border); padding: 20px; background: var(--surface); }
+    .verdict-card.sync  { border-color: rgba(37,99,235,0.3);  background: rgba(37,99,235,0.05); }
+    .verdict-card.async { border-color: rgba(5,150,105,0.3);  background: rgba(5,150,105,0.05); }
+    .verdict-title { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+    .verdict-card.sync  .verdict-title { color: #93c5fd; }
+    .verdict-card.async .verdict-title { color: #6ee7b7; }
+    .verdict-sub { font-size: 11px; color: var(--text-dim); margin-bottom: 14px; }
+    .verdict-list { list-style: none; display: flex; flex-direction: column; gap: 7px; }
+    .verdict-list li { font-size: 12px; color: var(--text); line-height: 1.5; display: flex; gap: 8px; }
+    .verdict-list li::before { content: attr(data-icon); flex-shrink: 0; }
+    .recommendation { border-radius: 8px; border: 1px solid rgba(5,150,105,0.3); background: rgba(5,150,105,0.07); padding: 20px 24px; }
+    .recommendation h3 { font-size: 13px; font-weight: 700; color: #6ee7b7; margin-bottom: 10px; }
+    .recommendation p  { font-size: 12.5px; color: var(--text-dim); line-height: 1.85; }
+    .recommendation strong { color: var(--text); }
+    .mono-s { font-family: var(--mono); font-size: 11px; background: #1f2937; border: 1px solid #374151; padding: 1px 5px; border-radius: 3px; color: #f59e0b; }
+  </style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="hero-tag">Architecture Review · enablePayment · v2</div>
+  <h1>同步啟用訂單 vs 非同步啟用訂單流程比較</h1>
+  <p>策略：同步段<strong style="color:#d4dde8">僅做 B2B 餘額門禁後直接 Kafka Produce</strong>，外部 API 呼叫確認成功後，所有 DB 寫入（含 paidPayment 前置寫入）與 Redis 更新全部由 Consumer 非同步執行，DB 與外部 API 完全不在關鍵路徑上</p>
+</div>
+
+<div class="tab-nav">
+  <button class="tab-btn active" onclick="switchTab('flow',this)">📋 流程對比</button>
+  <button class="tab-btn" onclick="switchTab('compare',this)">⚖️ 優缺點比較</button>
+  <button class="tab-btn" onclick="switchTab('saga',this)">🔁 Saga 說明</button>
+  <button class="tab-btn" onclick="switchTab('risk',this)">⚠️ 風險與對策</button>
+  <button class="tab-btn" onclick="switchTab('verdict',this)">✅ 建議結論</button>
+</div>
+
+<div class="main">
+
+  <!-- PANEL 1 : FLOW -->
+  <div class="panel active" id="panel-flow">
+    <div class="flow-compare">
+
+      <!-- 同步 -->
+      <div class="flow-card sync">
+        <div class="flow-card-header">
+          <div class="flow-card-title">🔵 現行：同步啟用訂單</div>
+          <div class="flow-card-sub">enablePayment() — 外部 API 同步阻塞 + 大量 DB 寫入，全在 API Thread 內完成才回應</div>
+        </div>
+        <div class="flow-card-body">
+
+          <div class="fstep s-same">
+            <div class="fstep-dot">①</div>
+            <div class="fstep-content">
+              <div class="fstep-label">B2B 餘額門禁</div>
+              <div class="fstep-desc">Redis HGET 帳戶可用餘額，不足則立即終止整個流程</div>
+              <div class="fstep-tags"><span class="ftag re-r">Redis R</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-same">
+            <div class="fstep-dot">②</div>
+            <div class="fstep-content">
+              <div class="fstep-label">paidPayment 前置寫入</div>
+              <div class="fstep-desc">PackageTourOrder STATUS_PAID、SaleReport 建立、Redis ZINCRBY 銷量計數、VTO / BookingSetting SADD 排程推送</div>
+              <div class="fstep-tags"><span class="ftag db-w">DB W ×2</span><span class="ftag re-w">Redis W ×3</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-same">
+            <div class="fstep-dot">③</div>
+            <div class="fstep-content">
+              <div class="fstep-label">Redis 安全網預存</div>
+              <div class="fstep-desc">HSET enableExternalOrderList：呼叫外部 API 前先存退款安全網資料，供例外後背景 Job 退款</div>
+              <div class="fstep-tags"><span class="ftag re-w">Redis HSET</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-same">
+            <div class="fstep-dot">④</div>
+            <div class="fstep-content">
+              <div class="fstep-label">呼叫外部 API（同步阻塞）</div>
+              <div class="fstep-desc">同步等待 Klook / THSR / Trip.com / Viator / Linktivity… 回應，延遲 2–10 秒不可控，直接阻塞 Thread</div>
+              <div class="fstep-tags"><span class="ftag ext">ExtAPI 同步阻塞</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-same">
+            <div class="fstep-dot">⑤</div>
+            <div class="fstep-content">
+              <div class="fstep-label">外部訂單 DB 狀態更新</div>
+              <div class="fstep-desc">ThsrOrder / KlookOrder 等寫入 externalStatus / redeemCode / externalOrderNo</div>
+              <div class="fstep-tags"><span class="ftag db-w">DB W（外部訂單）</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-same">
+            <div class="fstep-dot">⑥</div>
+            <div class="fstep-content">
+              <div class="fstep-label">套票 / 商品訂單逐筆處理</div>
+              <div class="fstep-desc">PackageTourOrder flush → ProductOrder 讀取 → SmartCard / ExternalRedeemCode / TicketPool 處理 → ProductOrder save</div>
+              <div class="fstep-tags"><span class="ftag db-r">DB R ×N</span><span class="ftag db-w">DB W ×N (flush)</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-same">
+            <div class="fstep-dot">⑦</div>
+            <div class="fstep-content">
+              <div class="fstep-label">物流單 / 分潤記錄 / VTO 生成</div>
+              <div class="fstep-desc">ShippingOrder、PriceLevelProfitShare、VirtualTourOrder × quantity、PromoCodeOrder，多個 flush:true</div>
+              <div class="fstep-tags"><span class="ftag db-w">DB W ×N (flush)</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-same">
+            <div class="fstep-dot">⑧</div>
+            <div class="fstep-content">
+              <div class="fstep-label">電子票證綁卡 / 優惠券 / 預約單</div>
+              <div class="fstep-desc">bindingVirtualTourSmartCard、PromoCodeOrder STATUS_USED、BookingOrder STATUS_AVAILABLE、BookingSetting SADD</div>
+              <div class="fstep-tags"><span class="ftag db-w">DB W ×N (flush)</span><span class="ftag re-w">Redis W</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-same">
+            <div class="fstep-dot">⑨</div>
+            <div class="fstep-content">
+              <div class="fstep-label">Payment STATUS_SUCCESS 核心寫入</div>
+              <div class="fstep-desc">payment.save(flush:true)：STATUS_SUCCESS、enableDate；信託資料更新</div>
+              <div class="fstep-tags"><span class="ftag db-w">DB W (flush) ★</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-same">
+            <div class="fstep-dot">⑩</div>
+            <div class="fstep-content">
+              <div class="fstep-label">雄獅 ERP 同步 + Redis 清理</div>
+              <div class="fstep-desc">非同步 lionAllExternalOrderSync、HDEL confirmExternalOrderList（Viator）、HDEL enableExternalOrderList（安全網收尾）</div>
+              <div class="fstep-tags"><span class="ftag re-w">Redis DEL ×2</span><span class="ftag jvm">Async Thread</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-err">
+            <div class="fstep-dot">!</div>
+            <div class="fstep-content">
+              <div class="fstep-label">例外回復（外部 API 失敗時）</div>
+              <div class="fstep-desc">DB 事務 Rollback；Redis enableExternalOrderList 保留；背景 Job 定期掃描，逐 provider 退款後呼叫 enablePaymentFailedAction()</div>
+              <div class="fstep-tags"><span class="ftag danger">DB Rollback</span><span class="ftag jvm">背景 Job 退款</span></div>
+            </div>
+          </div>
+
+          <div class="flow-callout blue">
+            ⏱ <strong>用戶等待：</strong>全部 10 步完成才回應。外部 API 是最大瓶頸（2–10 秒不可控），高峰期 Thread Pool 被佔滿，RT 嚴重劣化。
+          </div>
+        </div>
+      </div>
+
+      <!-- 非同步 -->
+      <div class="flow-card async">
+        <div class="flow-card-header">
+          <div class="flow-card-title">🟢 新方案：非同步啟用訂單</div>
+          <div class="flow-card-sub">B2B 餘額門禁 → Kafka Produce → 202，Consumer 確認外部 API 全部成功後才執行所有 DB 寫入</div>
+        </div>
+        <div class="flow-card-body">
+
+          <div class="seg-label">同步段（API Thread）</div>
+
+          <div class="fstep s-same">
+            <div class="fstep-dot">①</div>
+            <div class="fstep-content">
+              <div class="fstep-label">B2B 餘額門禁（保留不變）</div>
+              <div class="fstep-desc">Redis HGET 帳戶可用餘額，不足則立即終止，不進入 Kafka。同步段唯一的驗證點</div>
+              <div class="fstep-tags"><span class="ftag re-r">Redis R</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-new">
+            <div class="fstep-dot">②</div>
+            <div class="fstep-content">
+              <div class="fstep-label">Kafka Produce（帶完整啟用資訊）</div>
+              <div class="fstep-desc">Payload 攜帶所有 Consumer 需要的欄位：paymentId、userId、PTO 明細、商品類型（SmartCard / ExternalRedeemCode / TicketPool）、物流設定、折價券、apiProvider 清單、信託類型、B2B 標記</div>
+              <div class="fstep-tags"><span class="ftag kafka">Kafka Produce</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-new">
+            <div class="fstep-dot">③</div>
+            <div class="fstep-content">
+              <div class="fstep-label">立刻回應用戶「處理中」</div>
+              <div class="fstep-desc">返回 paymentId + 狀態查詢 endpoint。此時 DB 尚無任何寫入，Kafka 訊息存在代表「處理中」</div>
+              <div class="fstep-tags"><span class="ftag ok">HTTP 202 Accepted</span></div>
+            </div>
+          </div>
+
+          <div class="seg-label">Consumer 非同步段（外部 API 確認 → 才執行所有 DB 寫入）</div>
+
+          <div class="fstep s-async">
+            <div class="fstep-dot">④</div>
+            <div class="fstep-content">
+              <div class="fstep-label">Consumer 消費 + 冪等確認</div>
+              <div class="fstep-desc">查 DB 是否已有 paymentId 對應的 SUCCESS / FAILED 記錄，已處理則跳過，防止 at-least-once 重複消費</div>
+              <div class="fstep-tags"><span class="ftag db-r">DB R（冪等查詢）</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-async">
+            <div class="fstep-dot">⑤</div>
+            <div class="fstep-content">
+              <div class="fstep-label">呼叫外部 API（逐 provider，可重試）</div>
+              <div class="fstep-desc">依 payload 內 apiProvider 清單逐一呼叫 Klook / THSR / Trip.com / Viator…，逐 provider 追蹤成功狀態（Map&lt;ApiProvider, Result&gt;）。支援指數退避自動重試，暫時性抖動不通知用戶</div>
+              <div class="fstep-tags"><span class="ftag ext">ExtAPI（含自動重試）</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-async">
+            <div class="fstep-dot">⑥</div>
+            <div class="fstep-content">
+              <div class="fstep-label">外部 API 全部確認成功 → paidPayment 前置寫入</div>
+              <div class="fstep-desc">PackageTourOrder STATUS_PAID、SaleReport 建立。確認外部系統全部到位後才寫 DB，不存在「外部未啟用但 DB 已標記付款」的中間狀態</div>
+              <div class="fstep-tags"><span class="ftag db-w">DB W ×2</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-async">
+            <div class="fstep-dot">⑦</div>
+            <div class="fstep-content">
+              <div class="fstep-label">外部訂單 DB 狀態 + 套票 / 商品訂單批次寫入</div>
+              <div class="fstep-desc">ThsrOrder / KlookOrder 寫入 redeemCode；PackageTourOrder、ProductOrder（SmartCard / ExternalRedeemCode / TicketPool 處理）批次寫入。從 Kafka payload 取值，<strong style="color:#d4dde8">不需再回查 DB</strong></div>
+              <div class="fstep-tags"><span class="ftag db-w">DB W（批次，從 payload 取值）</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-async">
+            <div class="fstep-dot">⑧</div>
+            <div class="fstep-content">
+              <div class="fstep-label">物流單 / 分潤 / VTO 生成 / 票證綁卡 / 優惠券</div>
+              <div class="fstep-desc">ShippingOrder、PriceLevelProfitShare、VirtualTourOrder × quantity、bindingVirtualTourSmartCard、PromoCodeOrder STATUS_USED、BookingOrder STATUS_AVAILABLE</div>
+              <div class="fstep-tags"><span class="ftag db-w">DB W ×N (flush)</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-async">
+            <div class="fstep-dot">⑨</div>
+            <div class="fstep-content">
+              <div class="fstep-label">Redis 更新（銷量計數 + 排程推送）</div>
+              <div class="fstep-desc">ZINCRBY 銷量計數、VTO / BookingSetting SADD 排程推送。所有 DB 寫入確認後才更新 Redis，避免 DB 失敗時 Redis 已更新的不一致</div>
+              <div class="fstep-tags"><span class="ftag re-w">Redis W ×3</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-async">
+            <div class="fstep-dot">⑩</div>
+            <div class="fstep-content">
+              <div class="fstep-label">Payment STATUS_SUCCESS + 雄獅 ERP 同步</div>
+              <div class="fstep-desc">payment.save(STATUS_SUCCESS, enableDate)；信託資料更新；非同步觸發 lionAllExternalOrderSync</div>
+              <div class="fstep-tags"><span class="ftag db-w">DB W ★</span><span class="ftag jvm">Async Thread</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-async">
+            <div class="fstep-dot">⑪</div>
+            <div class="fstep-content">
+              <div class="fstep-label">通知用戶完成</div>
+              <div class="fstep-desc">WebSocket / Push / Email 推送啟用完成，附上票券兌換碼、有效期限</div>
+              <div class="fstep-tags"><span class="ftag ok">推播通知</span></div>
+            </div>
+          </div>
+
+          <div class="fstep s-err">
+            <div class="fstep-dot">!</div>
+            <div class="fstep-content">
+              <div class="fstep-label">Consumer 失敗 → Saga 自動補償</div>
+              <div class="fstep-desc">外部 API 失敗（重試耗盡）→ 只退已成功 provider；DB 批次寫入失敗 → Rollback。不依賴背景 Job，不需 Redis 安全網（詳見 Saga 說明頁籤）</div>
+              <div class="fstep-tags"><span class="ftag danger">外部 API 自動退款</span><span class="ftag db-w">DB FAILED</span><span class="ftag kafka">DLQ</span></div>
+            </div>
+          </div>
+
+          <div class="flow-callout green">
+            ⚡ <strong>同步段（①~③）目標 &lt; 50ms</strong>：僅 Redis HGET + Kafka Produce，無任何 DB 寫入、無外部 API 等待。Consumer 確認外部 API 全部成功後，才執行所有 DB 寫入，資料一致性比現行更正確。
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="flow-legend">
+      <span style="color:var(--text-dim)">圖例：</span>
+      <span style="color:#d4dde8">⚪ 保留不變</span>
+      <span style="color:#6ee7b7">🟢 新增 / 調整</span>
+      <span style="color:#fde68a">🟡 從同步移出（延後）</span>
+      <span style="color:#c4b5fd">🟣 Consumer 非同步執行</span>
+      <span style="color:#fca5a5">🔴 失敗補償路徑</span>
+    </div>
+  </div>
+
+  <!-- PANEL 2 : COMPARE -->
+  <div class="panel" id="panel-compare">
+
+    <div class="compare-section">
+      <div class="compare-section-title">效能與吞吐量</div>
+      <table class="compare-table">
+        <thead><tr><th>指標</th><th>🔵 同步（現行）</th><th>🟢 非同步（新方案）</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>用戶感知 RT</td>
+            <td><span class="chip bad">慢</span><br>外部 API 同步阻塞，高峰可能 5–15 秒，完全不可控</td>
+            <td><span class="chip good">極大改善</span><br>同步段僅 Redis HGET + Kafka Produce，目標 &lt; 50ms</td>
+          </tr>
+          <tr>
+            <td>Thread Pool 壓力</td>
+            <td><span class="chip bad">高</span><br>每個啟用請求長時間佔用一個 Thread 等外部 API，高峰 Thread 耗盡導致整體服務降級</td>
+            <td><span class="chip good">極低</span><br>同步段無任何等待，Thread 毫秒級釋放，可支撐數十倍並發</td>
+          </tr>
+          <tr>
+            <td>DB 連線壓力</td>
+            <td><span class="chip bad">高</span><br>整個啟用流程（含外部 API 等待期間）持續佔用 DB 連線</td>
+            <td><span class="chip good">同步段零壓力</span><br>同步段無任何 DB 操作，DB 壓力完全由 Consumer 控速，可限制並發數</td>
+          </tr>
+          <tr>
+            <td>外部 API 抖動影響</td>
+            <td><span class="chip bad">直接衝擊用戶</span><br>外部服務慢或暫時不可用，用戶直接看到 timeout</td>
+            <td><span class="chip good">完全隔離</span><br>Consumer 指數退避重試吸收暫時性抖動，用戶只看到「處理中」</td>
+          </tr>
+          <tr>
+            <td>系統吞吐量</td>
+            <td><span class="chip bad">受限</span><br>瓶頸 = Thread 數 ÷ 外部 API 平均 RT，峰值難突破</td>
+            <td><span class="chip good">大幅提升</span><br>QPS 幾乎只受 Kafka produce 速度限制；Consumer 可水平擴展 partition</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="compare-section">
+      <div class="compare-section-title">資料一致性與正確性</div>
+      <table class="compare-table">
+        <thead><tr><th>指標</th><th>🔵 同步（現行）</th><th>🟢 非同步（新方案）</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>B2B 餘額門禁</td>
+            <td><span class="chip good">有效</span><br>Redis HGET 前置，不足即終止</td>
+            <td><span class="chip good">完整保留</span><br>同步段唯一驗證點，與現行相同</td>
+          </tr>
+          <tr>
+            <td>外部 API 成功後才寫 DB</td>
+            <td><span class="chip warn">有缺口</span><br>paidPayment DB 寫入早於外部 API 呼叫，API 失敗需靠 @Transactional Rollback 還原，Redis 寫入無法自動回退</td>
+            <td><span class="chip good">結構更正確</span><br>Consumer 確認所有外部 API 成功後才開始 DB 寫入，DB 狀態始終與外部系統同步，無中間狀態</td>
+          </tr>
+          <tr>
+            <td>Redis 更新時機</td>
+            <td><span class="chip warn">分散，早於 DB 完成</span><br>ZINCRBY / SADD 穿插在 DB 操作之間，DB Rollback 後 Redis 已更新，需靠對帳 Job 修正</td>
+            <td><span class="chip good">DB 完成後才更新</span><br>所有 DB 寫入確認後才更新 Redis，大幅縮小 Redis 與 DB 不一致的窗口</td>
+          </tr>
+          <tr>
+            <td>票券狀態可查時機</td>
+            <td><span class="chip good">同步回應時</span><br>回應時 Payment 已是 SUCCESS，redeemCode 已寫入</td>
+            <td><span class="chip warn">Consumer 完成後</span><br>202 回應時 DB 無記錄，需等 Consumer 完成，前端顯示「處理中」</td>
+          </tr>
+          <tr>
+            <td>冪等需求</td>
+            <td><span class="chip good">低</span><br>同一事務，無重複問題</td>
+            <td><span class="chip bad">高</span><br>Consumer 需查 DB 去重；外部 API 需查 externalStatus 防止重複啟用</td>
+          </tr>
+          <tr>
+            <td>補償機制可觀測性</td>
+            <td><span class="chip warn">低</span><br>依賴背景 Job 掃描 Redis，退款時機不確定，Redis key 殘留難監控</td>
+            <td><span class="chip good">高</span><br>Saga 流程明確，失敗立即補償，DLQ 提供完整失敗記錄，無隱性 Job</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="compare-section">
+      <div class="compare-section-title">工程複雜度與維運</div>
+      <table class="compare-table">
+        <thead><tr><th>指標</th><th>🔵 同步（現行）</th><th>🟢 非同步（新方案）</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>架構複雜度</td>
+            <td><span class="chip good">低</span><br>單一流程，一條 call stack，Debug 直覺</td>
+            <td><span class="chip bad">高</span><br>API → Kafka → Consumer → Saga，需 Distributed Tracing 串接</td>
+          </tr>
+          <tr>
+            <td>外部 API 重試策略</td>
+            <td><span class="chip bad">無法重試</span><br>同步路徑重試直接加劇 RT，通常只能直接失敗走補償</td>
+            <td><span class="chip good">彈性重試</span><br>Consumer 可設指數退避重試（3 次，1s/2s/4s），暫時性失敗自動恢復</td>
+          </tr>
+          <tr>
+            <td>Kafka Payload 設計</td>
+            <td><span class="chip neu">N/A</span></td>
+            <td><span class="chip warn">關鍵且複雜</span><br>enablePayment 業務欄位極多（商品類型、物流、折價券、信託、B2B、apiProvider 清單），payload 必須完整，日後欄位異動需 schema 演進策略</td>
+          </tr>
+          <tr>
+            <td>前端改動</td>
+            <td><span class="chip good">無</span></td>
+            <td><span class="chip warn">需配合</span><br>「處理中」UI、輪詢或 WebSocket 訂閱、票券延遲顯示、逾時提示、失敗引導重試</td>
+          </tr>
+          <tr>
+            <td>維運負擔</td>
+            <td><span class="chip warn">中</span><br>需維護背景 Job 掃描邏輯、Redis 安全網監控</td>
+            <td><span class="chip warn">中（不同面向）</span><br>需監控 Kafka lag、Consumer 成功率、外部 API per-provider 成功率、DLQ 訊息數、「處理中」超時數；移除 Redis 安全網與背景 Job</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+
+  <!-- PANEL 3 : SAGA -->
+  <div class="panel" id="panel-saga">
+
+    <div class="saga-intro">
+      新方案移除了 Redis 安全網與背景 Job，改用 <span class="highlight">Consumer 內明確的 Saga 流程</span>作為唯一補償機制。<br>
+      <strong>關鍵設計：外部 API 呼叫放在所有 DB 寫入之前。</strong>外部 API 失敗 → 只需退款，DB 尚未寫入無需回退；DB 失敗 → 只需 Rollback，外部已啟用無需退款。兩個補償域完全隔離，複雜度大幅降低。
+    </div>
+
+    <div class="saga-compare">
+      <div class="saga-box old">
+        <div class="saga-box-header">🗄️ 現行補償：Redis 安全網 + 背景 Job</div>
+        <div class="saga-box-body">
+          同步路徑例外時，DB Rollback，Redis 安全網 key 殘留等背景 Job 掃描退款。補償時機不確定，Job 邏輯需另外維護。
+          <div class="code-block"><span class="c-blue">API Thread 例外</span>
+  DB.ROLLBACK()           <span class="c-green">← 自動</span>
+  Redis["enableExternalOrderList"]
+    <span class="c-gray">// key 殘留，等 Job 定期掃描</span>
+
+<span class="c-blue">背景 Job（時機不確定）</span>
+  keys = Redis.HKEYS("enableExternalOrderList")
+  <span class="c-blue">for</span> key <span class="c-blue">in</span> keys:
+    processEnableOrderException(key) <span class="c-gray">// 退款</span></div>
+        </div>
+      </div>
+      <div class="saga-box saga">
+        <div class="saga-box-header">🔁 新方案補償：Consumer 內明確 Saga</div>
+        <div class="saga-box-body">
+          Consumer 步驟間明確追蹤成功狀態，失敗時立即反向補償，時機確定且可觀測，不依賴外部 Job。
+          <div class="code-block"><span class="c-green">步驟1</span> → 外部 API（逐 provider 追蹤）
+<span class="c-green">步驟2</span> → DB paidPayment 前置寫入
+<span class="c-green">步驟3</span> → DB 批次建立 PTO/PO/VTO
+<span class="c-red">步驟4</span> → Payment STATUS_SUCCESS 失敗
+          ↓
+<span class="c-yellow">補償3+2</span> → DB Rollback 所有批次寫入
+<span class="c-yellow">補償1</span>   → 逐 provider 呼叫退款 API
+<span class="c-yellow">標記</span>    → Payment STATUS_FAILED
+<span class="c-yellow">通知</span>    → 告訴用戶啟用失敗</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="saga-flow-section">
+      <div class="saga-section-title">本系統的 Saga 補償流程（Consumer 失敗時）</div>
+
+      <div class="saga-note purple">
+        📌 <strong>核心設計原則：外部 API 先於所有 DB 寫入。</strong>外部 API 失敗時 DB 尚未動，補償只需退外部款；DB 失敗時外部已啟用，補償只需 Rollback DB。兩個失敗域不重疊，補償邏輯清晰。
+      </div>
+
+      <div class="saga-steps">
+
+        <div class="sstep ok">
+          <div class="sstep-num">1</div>
+          <div class="sstep-body">
+            <div class="sstep-label">Consumer：冪等確認 ✅</div>
+            <div class="sstep-desc">查 DB 是否已有 paymentId 對應的 SUCCESS / FAILED 記錄，已處理則跳過。DB unique constraint 作最後防線</div>
+          </div>
+        </div>
+
+        <div class="sstep ok">
+          <div class="sstep-num">2</div>
+          <div class="sstep-body">
+            <div class="sstep-label">外部 API 逐 provider 呼叫（追蹤成功狀態）✅</div>
+            <div class="sstep-desc">依 payload apiProvider 清單逐一呼叫，用 Map&lt;ApiProvider, Result&gt; 記錄各 provider 結果；指數退避重試最多 3 次；呼叫前先查 externalStatus 確認未重複啟用</div>
+          </div>
+        </div>
+
+        <div class="sstep ok">
+          <div class="sstep-num">3</div>
+          <div class="sstep-body">
+            <div class="sstep-label">paidPayment 前置 DB 寫入 ✅</div>
+            <div class="sstep-desc">外部 API 全部成功後才執行：PackageTourOrder STATUS_PAID、SaleReport 建立</div>
+          </div>
+        </div>
+
+        <div class="sstep ok">
+          <div class="sstep-num">4</div>
+          <div class="sstep-body">
+            <div class="sstep-label">DB 批次寫入（外部訂單 / PTO / PO / VTO / 票證 / 物流 / 分潤）✅</div>
+            <div class="sstep-desc">從 Kafka payload 取值批次寫入，SmartCard / ExternalRedeemCode / TicketPool / VirtualTourOrder / ShippingOrder / PriceLevelProfitShare 等</div>
+          </div>
+        </div>
+
+        <div class="sstep ok">
+          <div class="sstep-num">5</div>
+          <div class="sstep-body">
+            <div class="sstep-label">Redis 更新（銷量 / 排程）✅</div>
+            <div class="sstep-desc">ZINCRBY 銷量計數、VTO / BookingSetting SADD 排程推送。DB 全部確認後才更新</div>
+          </div>
+        </div>
+
+        <div class="sstep fail">
+          <div class="sstep-num">6</div>
+          <div class="sstep-body">
+            <div class="sstep-label">Payment STATUS_SUCCESS 寫入 ❌ 失敗（示例斷點）</div>
+            <div class="sstep-desc">例如 DB 暫時不可用、optimistic lock 衝突。步驟 3–5 已執行，需回退</div>
+          </div>
+        </div>
+
+        <div class="sstep-arrow">↓ 觸發 Saga 補償，從斷點往回退</div>
+
+        <div class="sstep comp">
+          <div class="sstep-num">C5</div>
+          <div class="sstep-body">
+            <div class="sstep-label">補償步驟5：Redis 銷量反向扣回</div>
+            <div class="sstep-desc">ZINCRBY 反向扣回已計入的銷量；SADD 排程 key 不影響正確性（背景 Job 執行時發現訂單 FAILED 可跳過）</div>
+          </div>
+        </div>
+
+        <div class="sstep comp">
+          <div class="sstep-num">C4+3</div>
+          <div class="sstep-body">
+            <div class="sstep-label">補償步驟4 + 3：DB Rollback 所有批次寫入</div>
+            <div class="sstep-desc">以 paymentId 為 key，將本次建立的 PTO / PO / VTO / SmartCard / SaleReport / ShippingOrder 等標記 FAILED 或刪除（推薦標記保留稽核軌跡）；PackageTourOrder 狀態還原</div>
+          </div>
+        </div>
+
+        <div class="sstep comp">
+          <div class="sstep-num">C2</div>
+          <div class="sstep-body">
+            <div class="sstep-label">補償步驟2：逐 provider 呼叫退款 API</div>
+            <div class="sstep-desc">依 successProviders Map，只退已成功啟用的 provider（Klook退款 / THSR退票 / Viator取消…）。退款前先查 externalStatus，已退款者跳過，防止重複退款。退款補償也設指數退避重試</div>
+          </div>
+        </div>
+
+        <div class="sstep comp">
+          <div class="sstep-num">通知</div>
+          <div class="sstep-body">
+            <div class="sstep-label">Payment 標記 FAILED，通知用戶</div>
+            <div class="sstep-desc">WebSocket / Push / Email，說明失敗原因，引導重新啟用。若補償本身也失敗 → DLQ + 立即告警，轉人工跟進</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="saga-flow-section">
+      <div class="saga-section-title">特殊情境：外部 API 部分成功後失敗</div>
+      <div class="saga-note yellow">
+        ⚠️ <strong>情境：</strong>同一 Payment 有多個 apiProvider（Klook + THSR），Klook 成功、THSR 重試耗盡後仍失敗。此時 DB 尚未寫入，補償只需退 Klook，不需退 THSR（未啟用），也不需任何 DB Rollback。
+      </div>
+      <div class="code-block"><span class="c-gray">// Consumer 步驟2：外部 API 逐 provider 呼叫</span>
+Map&lt;ApiProvider, ExternalResult&gt; successResults = new LinkedHashMap&lt;&gt;()
+
+<span class="c-blue">for</span> (ApiProvider provider : payload.getProviders()) {
+  <span class="c-gray">// 冪等保護：已 ENABLED 則跳過，不重複呼叫</span>
+  <span class="c-blue">if</span> (externalRepo.isAlreadyEnabled(paymentId, provider)) <span class="c-blue">continue</span>
+
+  <span class="c-blue">try</span> {
+    ExternalResult r = retryWithBackoff(() -> provider.enable(payload))
+    successResults.put(provider, r)   <span class="c-green">// 記錄已成功的 provider</span>
+
+  } <span class="c-blue">catch</span> (MaxRetriesExceededException e) {
+    <span class="c-gray">// 此 provider 失敗，退已成功的 provider，DB 尚未寫入不需回退</span>
+    rollbackSuccessProviders(successResults)
+    <span class="c-blue">throw</span> new SagaCompensatedException(e)
+  }
+}
+<span class="c-gray">// 全部成功，才進入步驟3 DB 寫入</span></div>
+    </div>
+
+    <div class="saga-flow-section">
+      <div class="saga-section-title">設計原則與注意事項</div>
+      <div class="saga-note green">
+        ✅ <strong>外部 API 先於 DB 寫入：</strong>外部失敗時 DB 無需回退；DB 失敗時外部無需退款。補償域隔離是整個方案複雜度可控的關鍵。<br>
+        ✅ <strong>退款補償也需冪等：</strong>退款補償失敗重試時，先查 externalStatus 是否已是 REFUNDED，避免重複退款。<br>
+        ✅ <strong>保留失敗記錄：</strong>Payment / PTO 標記 FAILED 而非刪除，保留完整稽核軌跡。<br>
+        ✅ <strong>DLQ 作為最終保底：</strong>若 Saga 補償（退款 API）也失敗，送 DLQ + 立即告警，帶完整 context（paymentId、已成功 provider 清單），轉人工跟進。<br>
+        ✅ <strong>移除 Redis 安全網與背景 Job：</strong>補償邏輯集中在 Consumer 內，消除了「Job 掃描時機不確定」與「Redis key 殘留監控」的維運負擔。
+      </div>
+    </div>
+
+  </div>
+
+  <!-- PANEL 4 : RISK -->
+  <div class="panel" id="panel-risk">
+    <div style="margin-bottom:20px; font-size:12.5px; color:var(--text-dim); line-height:1.8;">
+      針對「B2B 餘額門禁 → Kafka Produce → Consumer（外部 API → DB 寫入 → Redis 更新）」架構的主要風險點。
+    </div>
+    <div class="risk-grid">
+
+      <div class="risk-card">
+        <div class="risk-card-header">
+          <div class="risk-icon">🔄</div>
+          <div><div class="risk-title">外部 API 重複啟用（冪等缺失）</div></div>
+          <div class="risk-sev sev-h">高</div>
+        </div>
+        <div class="risk-body">
+          <div class="risk-desc">Consumer 重啟或 Saga 補償重試時，可能重複呼叫外部 API（THSR 重複出票、Klook 重複核銷），導致用戶被重複扣款或拿到多張票，且部分外部系統不支援冪等鍵。</div>
+          <div class="risk-fix"><strong>對策：</strong>呼叫外部 API 前，先查 externalOrder.externalStatus；若已是 ENABLED 則跳過。對支援冪等 key 的 provider 傳入 paymentId 作為 idempotency key。</div>
+        </div>
+      </div>
+
+      <div class="risk-card">
+        <div class="risk-card-header">
+          <div class="risk-icon">📦</div>
+          <div><div class="risk-title">Kafka Payload 缺少欄位（業務欄位多）</div></div>
+          <div class="risk-sev sev-h">高</div>
+        </div>
+        <div class="risk-body">
+          <div class="risk-desc">enablePayment 業務欄位極多（商品類型、物流設定、折價券、信託類型、B2B 標記、apiProvider 清單），任何遺漏導致 Consumer 無法正確建立記錄，且 payload 缺欄位無法靠重試修復。</div>
+          <div class="risk-fix"><strong>對策：</strong>使用 Schema Registry（Avro / JSON Schema）管理格式；Produce 前加 schema 驗證，欄位不完整則不 Produce；Consumer 收到不完整 payload 送 DLQ 而非重試。</div>
+        </div>
+      </div>
+
+      <div class="risk-card">
+        <div class="risk-card-header">
+          <div class="risk-icon">🌐</div>
+          <div><div class="risk-title">退款 API 也失敗（補償失敗）</div></div>
+          <div class="risk-sev sev-h">高</div>
+        </div>
+        <div class="risk-body">
+          <div class="risk-desc">Saga 補償呼叫退款 API 時，外部服務同樣不可用，退款無法完成。用戶外部訂單已啟用但 Payment 為 FAILED，形成資料不一致且無法自動恢復。</div>
+          <div class="risk-fix"><strong>對策：</strong>退款補償設指數退避重試；重試耗盡後送 DLQ + 立即告警，保留完整 context（paymentId、已成功 provider 清單）轉人工跟進。</div>
+        </div>
+      </div>
+
+      <div class="risk-card">
+        <div class="risk-card-header">
+          <div class="risk-icon">⏱️</div>
+          <div><div class="risk-title">「處理中」狀態過久，用戶重複點擊</div></div>
+          <div class="risk-sev sev-m">中</div>
+        </div>
+        <div class="risk-body">
+          <div class="risk-desc">Consumer 積壓或外部 API 重試時，Payment 長時間無 DB 記錄。用戶查詢找不到，可能誤以為失敗而重複點擊，產生多筆 Kafka 訊息，Consumer 冪等壓力增加。</div>
+          <div class="risk-fix"><strong>對策：</strong>Kafka produce 成功後將 paymentId 存入 Redis（TTL 30 分鐘）作為「處理中」標記，前端查狀態先查 Redis；設「處理中」超時告警，超 15 分鐘未完成即人工檢視。</div>
+        </div>
+      </div>
+
+      <div class="risk-card">
+        <div class="risk-card-header">
+          <div class="risk-icon">🎫</div>
+          <div><div class="risk-title">TicketPool / ExternalRedeemCode 取票競態</div></div>
+          <div class="risk-sev sev-m">中</div>
+        </div>
+        <div class="risk-body">
+          <div class="risk-desc">多個 Consumer 同時處理不同訂單時，可能搶到同一張 TicketPoolOrder 或 ExternalRedeemCode（取「最早到期可用票」邏輯），導致 unique constraint 衝突或重複標記 STATUS_USED。</div>
+          <div class="risk-fix"><strong>對策：</strong>在取票環節使用 SELECT FOR UPDATE（悲觀鎖）或 DB unique constraint 捕捉衝突後重試取下一張；或改用 Redis RPOP 作為票池佇列（原子取票，無競態）。</div>
+        </div>
+      </div>
+
+      <div class="risk-card">
+        <div class="risk-card-header">
+          <div class="risk-icon">📊</div>
+          <div><div class="risk-title">Consumer 積壓觸發外部 API 重試風暴</div></div>
+          <div class="risk-sev sev-m">中</div>
+        </div>
+        <div class="risk-body">
+          <div class="risk-desc">高峰期 Consumer 積壓時，大量訊息同時開始呼叫外部 API，可能觸發外部服務限流（rate limit），造成雪崩式重試失敗，反而讓外部服務更難恢復。</div>
+          <div class="risk-fix"><strong>對策：</strong>重試加入隨機 jitter 避免同時重試；監控 Consumer lag，超閾值時暫停部分 partition 降流；事先與各外部 provider 確認 rate limit 規格，Consumer 並發數不超過上限。</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- PANEL 5 : VERDICT -->
+  <div class="panel" id="panel-verdict">
+    <div class="verdict-grid">
+      <div class="verdict-card sync">
+        <div class="verdict-title">🔵 同步啟用（現行）</div>
+        <div class="verdict-sub">繼續維持的理由</div>
+        <ul class="verdict-list">
+          <li data-icon="✅">邏輯集中，一條 call stack，Debug 直覺</li>
+          <li data-icon="✅">票券狀態立即確定，用戶取票無等待</li>
+          <li data-icon="✅">外部 API 例外處理（逐 provider 退款）邏輯已成熟</li>
+          <li data-icon="✅">不需 Kafka、Consumer、Saga 等額外架構</li>
+          <li data-icon="❌">外部 API 延遲直接阻塞 Thread，高峰體驗差</li>
+          <li data-icon="❌">外部服務抖動時整體 RT 劣化，難水平擴展</li>
+          <li data-icon="❌">paidPayment DB 早於外部 API，失敗需靠 Rollback，Redis 已更新無法自動回退</li>
+        </ul>
+      </div>
+      <div class="verdict-card async">
+        <div class="verdict-title">🟢 非同步啟用（新方案）</div>
+        <div class="verdict-sub">導入的理由</div>
+        <ul class="verdict-list">
+          <li data-icon="✅">同步段 &lt; 50ms：無 DB 寫入、無外部 API，RT 極低</li>
+          <li data-icon="✅">外部 API 完全解耦，抖動由 Consumer 重試吸收</li>
+          <li data-icon="✅">外部 API 成功後才寫 DB，一致性結構比現行更正確</li>
+          <li data-icon="✅">Saga 補償明確，消除 Redis 安全網與背景 Job 的維運負擔</li>
+          <li data-icon="❌">票券延遲顯示，前端需實作「處理中」狀態</li>
+          <li data-icon="❌">外部 API 冪等設計複雜（部分 provider 不支援冪等鍵）</li>
+          <li data-icon="❌">Kafka payload 欄位多，schema 管理與日後演進成本高</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="recommendation">
+      <h3>📌 建議：以「外部 API 與 DB 寫入完全隔離」為核心，分階段安全導入</h3>
+      <p>
+        此方案最關鍵的設計決策是<strong>外部 API 呼叫放在所有 DB 寫入之前</strong>。這讓補償域完全隔離：外部失敗只退款、DB 失敗只 Rollback，比現行「DB 已寫入後外部失敗需靠 @Transactional Rollback + Job 補償」的混合補償更簡單、更可靠。
+        <br><br>
+        <strong>第一步（必做，上線前地基）：</strong>設計 Kafka payload schema，枚舉所有商品類型（SmartCard / ExternalRedeemCode / TicketPool / DELIVERY）與所有 apiProvider 所需欄位；確認 Consumer 可從 payload 完整還原所有處理路徑，不需回查 DB。使用 Schema Registry 管理格式演進。
+        <br><br>
+        <strong>第二步（核心安全機制）：</strong>實作外部 API 冪等查詢（externalStatus 判斷）、Consumer 冪等（paymentId + DB 狀態查詢）、指數退避重試（含 jitter）、DLQ + 告警流程，以及「處理中」狀態的 Redis TTL 標記。這些機制必須在功能上線前全部就緒。
+        <br><br>
+        <strong>第三步（特定 provider 先試）：</strong>以 Feature Flag 控制，對外部 API 延遲最嚴重、且退款邏輯相對簡單的 provider 先啟用非同步路徑（例如單一 provider 的訂單），確認 Consumer / Saga 穩定後再全量開放。
+        <br><br>
+        <strong>必須在上線前完成的安全網：</strong>① 外部 API 冪等查詢（防重複啟用）、② 退款補償指數退避 + DLQ 告警、③ Consumer lag 監控告警、④「處理中」Redis TTL + 超時告警（15 分鐘）、⑤ 壓測確認 Consumer 並發數不觸發各 provider rate limit。
+      </p>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  function switchTab(id, btn) {
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('panel-' + id).classList.add('active');
+    btn.classList.add('active');
+  }
+</script>
+</body>
+</html>
