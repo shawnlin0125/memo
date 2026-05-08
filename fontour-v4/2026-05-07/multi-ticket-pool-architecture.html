@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>票池中台架構筆記 — Spring Boot 版</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+TC:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f7f6f3;
+    --surface: #ffffff;
+    --surface2: #f0efe9;
+    --border: #e2e0d8;
+    --border2: #cccac0;
+    --text: #1a1916;
+    --muted: #6b6860;
+    --hint: #a09d96;
+    --accent: #2563eb;
+    --accent-bg: #eff6ff;
+    --green: #16a34a;
+    --green-bg: #f0fdf4;
+    --amber: #d97706;
+    --amber-bg: #fffbeb;
+    --red: #dc2626;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Noto Sans TC', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-weight: 300;
+    line-height: 1.75;
+    font-size: 14px;
+  }
+
+  /* ── Header ── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 40px 48px 32px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  .header-inner {
+    max-width: 860px;
+    margin: 0 auto;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+
+  .header-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    color: var(--hint);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  h1 {
+    font-family: var(--mono);
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.3;
+  }
+
+  h1 span { color: var(--accent); }
+
+  .header-badges {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .badge {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    padding: 3px 10px;
+    border-radius: 3px;
+    border: 1px solid;
+  }
+
+  .badge-java  { background: var(--amber-bg); color: var(--amber); border-color: #fcd34d; }
+  .badge-k8s   { background: var(--green-bg); color: var(--green); border-color: #86efac; }
+  .badge-sre   { background: var(--accent-bg); color: var(--accent); border-color: #bfdbfe; }
+
+  /* ── Nav ── */
+  nav {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .nav-inner {
+    max-width: 860px;
+    margin: 0 auto;
+    display: flex;
+    gap: 0;
+    overflow-x: auto;
+  }
+
+  nav a {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--hint);
+    text-decoration: none;
+    padding: 12px 20px;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+    letter-spacing: 0.05em;
+    transition: all 0.15s;
+  }
+
+  nav a:hover { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* ── Main ── */
+  main {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 48px 48px 96px;
+  }
+
+  section { margin-bottom: 72px; }
+
+  .section-eyebrow {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  h2 {
+    font-family: var(--mono);
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 20px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  h3 {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin: 28px 0 10px;
+  }
+
+  p { color: var(--muted); font-size: 14px; max-width: 680px; margin-bottom: 14px; }
+
+  /* ── Callout ── */
+  .callout {
+    background: var(--accent-bg);
+    border: 1px solid #bfdbfe;
+    border-left: 3px solid var(--accent);
+    border-radius: 0 6px 6px 0;
+    padding: 14px 18px;
+    font-size: 13px;
+    color: var(--text);
+    line-height: 1.7;
+    margin-bottom: 20px;
+  }
+
+  .callout strong { font-weight: 500; color: var(--accent); }
+  .callout code {
+    font-family: var(--mono);
+    font-size: 11px;
+    background: rgba(37,99,235,0.1);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  /* ── Term table ── */
+  .terms { display: flex; flex-direction: column; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin-bottom: 4px; }
+
+  .term {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    background: var(--surface);
+  }
+
+  .term:hover { background: #fafaf8; }
+
+  .term-key {
+    background: var(--surface2);
+    padding: 11px 16px;
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 500;
+    border-right: 1px solid var(--border);
+    display: flex;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
+    line-height: 1.4;
+  }
+
+  .term-val {
+    padding: 11px 16px;
+    font-size: 13px;
+    color: var(--muted);
+    line-height: 1.65;
+  }
+
+  .term-val code, .term-key code, p code, li code {
+    font-family: var(--mono);
+    font-size: 11px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 5px;
+    color: var(--text);
+  }
+
+  .tag {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    padding: 2px 7px;
+    border-radius: 2px;
+    font-weight: 600;
+  }
+
+  .tag-strategy { background: var(--accent-bg); color: var(--accent); }
+  .tag-tool     { background: var(--surface2); color: var(--muted); border: 1px solid var(--border2); }
+  .tag-k8s      { background: var(--green-bg); color: var(--green); }
+  .tag-sre      { background: var(--amber-bg); color: var(--amber); }
+  .tag-java     { background: #fff7ed; color: #c2410c; }
+
+  /* ── Flow steps ── */
+  .flow { display: flex; flex-direction: column; }
+
+  .flow-step {
+    display: grid;
+    grid-template-columns: 36px 1fr;
+    gap: 16px;
+    padding-bottom: 24px;
+    position: relative;
+  }
+
+  .flow-step:not(:last-child)::before {
+    content: '';
+    position: absolute;
+    left: 17px;
+    top: 36px;
+    bottom: 0;
+    width: 1px;
+    background: var(--border);
+  }
+
+  .step-num {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent);
+    flex-shrink: 0;
+  }
+
+  .step-content { padding-top: 6px; }
+
+  .step-title {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 4px;
+  }
+
+  .step-desc {
+    font-size: 13px;
+    color: var(--muted);
+    margin-bottom: 10px;
+    line-height: 1.6;
+  }
+
+  /* ── Code block ── */
+  .code-block {
+    background: #1a1916;
+    border-radius: 6px;
+    overflow: hidden;
+    margin-top: 10px;
+  }
+
+  .code-block-header {
+    background: #252420;
+    padding: 7px 16px;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    color: #6b6860;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .code-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+  }
+
+  .code-block pre {
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.8;
+    color: #c8c4b8;
+    padding: 16px 20px;
+    overflow-x: auto;
+  }
+
+  .kw  { color: #93c5fd; }  /* keyword / tag */
+  .str { color: #86efac; }  /* string value */
+  .num { color: #fbbf24; }  /* number */
+  .cm  { color: #4b4a44; font-style: italic; }  /* comment */
+  .ann { color: #c4b5fd; }  /* annotation */
+  .typ { color: #67e8f9; }  /* type */
+  .prop { color: #7dd3fc; } /* property/key */
+
+  /* ── Summary box ── */
+  .summary-box {
+    margin-top: 32px;
+    padding: 20px 24px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-top: 3px solid var(--accent);
+    border-radius: 0 0 6px 6px;
+  }
+
+  .summary-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  .summary-text {
+    font-size: 14px;
+    color: var(--text);
+    font-weight: 400;
+    line-height: 1.75;
+  }
+
+  /* ── Footer ── */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 24px 48px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--hint);
+    letter-spacing: 0.06em;
+  }
+
+  @media (max-width: 640px) {
+    header { padding: 28px 20px; }
+    main { padding: 32px 20px 64px; }
+    .term { grid-template-columns: 1fr; }
+    .term-key { border-right: none; border-bottom: 1px solid var(--border); }
+    nav a { padding: 10px 14px; }
+    footer { padding: 20px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div>
+      <div class="header-label">SRE Architecture Notes</div>
+      <h1>票池中台架構 — <span>Spring Boot 版</span></h1>
+    </div>
+    <div class="header-badges">
+      <span class="badge badge-java">Java / Spring Boot</span>
+      <span class="badge badge-k8s">Kubernetes</span>
+      <span class="badge badge-sre">SRE</span>
+    </div>
+  </div>
+</header>
+
+<nav>
+  <div class="nav-inner">
+    <a href="#goal">01 · 核心目標</a>
+    <a href="#glossary">02 · 名詞解釋</a>
+    <a href="#sop">03 · 新增 Node SOP</a>
+  </div>
+</nav>
+
+<main>
+
+  <!-- ══ 01 核心目標 ══ -->
+  <section id="goal">
+    <div class="section-eyebrow">01 · Core Goal</div>
+    <h2>核心目標</h2>
+
+    <div class="callout">
+      <strong>「新增一個票池 Node，不另開專案，開發完自動有 K8s 部署 config。」</strong><br>
+      Spring Boot 實現方式：<code>Maven Multi-Module Monorepo</code> + <code>provider.yaml</code> 身份宣告 + <code>Helm Chart</code> 模板 + CI/CD 自動渲染。<br>
+      K8s / Helm 層與語言完全無關，只有建構工具和健康檢查端點不同。
+    </div>
+
+    <p>整體架構由四個層次組成，各層職責清晰分離：</p>
+
+    <div class="terms">
+      <div class="term">
+        <div class="term-key"><span class="tag tag-strategy">策略</span>Monorepo</div>
+        <div class="term-val">所有 Provider Node、Gateway、共用 Java 介面、Infra 設定放在同一個 Git Repo。透過 Maven Multi-Module 管理，根目錄一個 parent <code>pom.xml</code> 統一所有子模組。</div>
+      </div>
+      <div class="term">
+        <div class="term-key"><span class="tag tag-strategy">策略</span>Convention over Configuration</div>
+        <div class="term-val">約定大於配置。只要 Node 的 Maven module 結構遵守規範、<code>provider.yaml</code> 格式正確，CI 就能自動處理 build、image 打包、Helm 渲染，不需每次手動設定。</div>
+      </div>
+      <div class="term">
+        <div class="term-key"><span class="tag tag-strategy">策略</span>Plugin 架構</div>
+        <div class="term-val">每個 Provider Node 實作 <code>IProviderNode</code> Java interface 即可被 Gateway 識別。新增插件不需修改 Gateway 或主系統，做到真正的插拔式擴展。</div>
+      </div>
+    </div>
+
+    <div class="summary-box">
+      <div class="summary-label">Architecture Pattern</div>
+      <div class="summary-text">
+        API Gateway + 插件式微服務 — 對外是一個子系統，對內是多個獨立部署的 Spring Boot 服務。<br>
+        新增供應商 = 複製 template → 填 <code>provider.yaml</code> → 實作四個方法 → push → 自動部署。
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 02 名詞解釋 ══ -->
+  <section id="glossary">
+    <div class="section-eyebrow">02 · Glossary</div>
+    <h2>名詞解釋</h2>
+
+    <h3>建構工具（Spring Boot 生態）</h3>
+    <div class="terms">
+      <div class="term">
+        <div class="term-key"><span class="tag tag-tool">工具</span>Maven Multi-Module</div>
+        <div class="term-val">Spring Boot 原生的 Monorepo 方案。根目錄的 parent <code>pom.xml</code> 宣告所有子模組並統一管理依賴版本（BOM），各 Node 是獨立的 <code>&lt;module&gt;</code>，可單獨 build 或部署。</div>
+      </div>
+      <div class="term">
+        <div class="term-key"><span class="tag tag-tool">工具</span>Gradle Multi-Project</div>
+        <div class="term-val">Maven 的替代方案，build 速度更快。根目錄 <code>settings.gradle</code> 宣告所有子專案，各 Node 有自己的 <code>build.gradle</code>。適合對建構效能要求較高的大型 Monorepo。</div>
+      </div>
+      <div class="term">
+        <div class="term-key"><span class="tag tag-tool">工具</span>Jib Plugin</div>
+        <div class="term-val">Google 出品的 Maven/Gradle plugin。<strong>不需要寫 Dockerfile</strong>，直接 <code>./mvnw jib:build</code> 就把 Spring Boot JAR 打包成 Docker image 推送到 Registry，並自動處理分層快取以加速 CI。</div>
+      </div>
+      <div class="term">
+        <div class="term-key"><span class="tag tag-tool">工具</span>Maven BOM</div>
+        <div class="term-val">Bill of Materials。在 parent <code>pom.xml</code> 的 <code>&lt;dependencyManagement&gt;</code> 統一鎖定所有子模組的依賴版本，避免各 Node 用到不同版本的同一個 library 造成衝突。</div>
+      </div>
+      <div class="term">
+        <div class="term-key"><span class="tag tag-tool">工具</span>-pl / -am 旗標</div>
+        <div class="term-val"><code>-pl packages/viator-node</code> 指定只建構特定 module，<code>-am</code>（also-make）自動包含它依賴的 shared module。CI 用 git diff 偵測有變動的 module 後，只 build 那個 Node，其他 Node 完全不動。</div>
+      </div>
+    </div>
+
+    <h3>K8s / 部署</h3>
+    <div class="terms">
+      <div class="term">
+        <div class="term-key"><span class="tag tag-k8s">K8s</span>Helm Chart</div>
+        <div class="term-val">K8s 的部署模板引擎。把 Deployment、Service、HPA 等 YAML 參數化，透過 <code>provider.yaml</code> 填值後渲染成完整 manifest。Spring Boot 和其他語言的 Node 共用同一套 Helm Chart，語言無關。</div>
+      </div>
+      <div class="term">
+        <div class="term-key"><span class="tag tag-k8s">K8s</span>provider.yaml</div>
+        <div class="term-val">本架構設計的「Node 身份宣告檔」。每個 Node 只需填這一個檔案（name、image、resources、HPA 設定），CI 讀取後自動渲染 Helm manifest，不需手動寫任何 K8s YAML。</div>
+      </div>
+      <div class="term">
+        <div class="term-key"><span class="tag tag-k8s">K8s</span>HPA</div>
+        <div class="term-val">Horizontal Pod Autoscaler。根據 CPU 使用率或自訂 metric 自動增減 Pod 數量。各 Node 在 <code>provider.yaml</code> 裡獨立設定 <code>minReplicas</code> / <code>maxReplicas</code>，互不影響。</div>
+      </div>
+      <div class="term">
+        <div class="term-key"><span class="tag tag-k8s">K8s</span>Readiness Probe</div>
+        <div class="term-val">K8s 判斷 Pod 是否「準備好接收流量」的健康檢查。Spring Boot Actuator 內建 <code>/actuator/health/readiness</code>，加入 <code>spring-boot-starter-actuator</code> 依賴即自動啟用，無需自行實作。</div>
+      </div>
+      <div class="term">
+        <div class="term-key"><span class="tag tag-k8s">K8s</span>Liveness Probe</div>
+        <div class="term-val">K8s 判斷 Pod 是否「還活著」的健康檢查。Spring Boot Actuator 內建 <code>/actuator/health/liveness</code>，失敗時 K8s 自動重啟 Pod。兩個 Probe 路徑需在 Helm Chart 的 <code>provider.yaml</code> 中宣告。</div>
+      </div>
+      <div class="term">
+        <div class="term-key"><span class="tag tag-k8s">K8s</span>initialDelaySeconds</div>
+        <div class="term-val">Probe 開始檢查前的等待秒數。Spring Boot 因 JVM 啟動需要時間，建議設為 <code>30</code>。設太低會導致 Pod 尚未啟動就被判定失敗而反覆重啟，造成 CrashLoopBackOff。</div>
+      </div>
+      <div class="term">
+        <div class="term-key"><span class="tag tag-k8s">K8s</span>Rolling Update</div>
+        <div class="term-val">K8s 預設更新策略，逐一替換舊 Pod，確保服務不中斷。搭配 Readiness Probe 可做到真正的零停機部署。Spring Boot 需額外在 <code>application.yml</code> 設定 <code>server.shutdown: graceful</code>。</div>
+      </div>
+    </div>
+
+    <h3>可靠性（SRE）</h3>
+    <div class="terms">
+      <div class="term">
+        <div class="term-key"><span class="tag tag-sre">SRE</span>Circuit Breaker</div>
+        <div class="term-val">熔斷器。Spring Boot 生態使用 <strong>Resilience4j</strong>（取代已停止維護的 Hystrix）。外部 API 連續失敗超過閾值時，自動「斷路」並切換至 fallback 方法，防止故障蔓延。</div>
+      </div>
+      <div class="term">
+        <div class="term-key"><span class="tag tag-sre">SRE</span>Resilience4j</div>
+        <div class="term-val">Spring Boot 官方推薦的容錯函式庫。提供 Circuit Breaker、Retry、Rate Limiter、Bulkhead 四種機制，透過 annotation 宣告式設定，並與 Spring Boot Actuator 整合自動暴露狀態 metric 至 Prometheus。</div>
+      </div>
+      <div class="term">
+        <div class="term-key"><span class="tag tag-sre">SRE</span>Bulkhead 艙壁隔離</div>
+        <div class="term-val">Resilience4j 的 <code>@Bulkhead</code> annotation。限制每個 Node 的並發呼叫數（執行緒池或 semaphore 模式），Klook Node 的執行緒耗盡不會影響 KKday Node，實現程序層的故障隔離。</div>
+      </div>
+      <div class="term">
+        <div class="term-key"><span class="tag tag-sre">SRE</span>Graceful Shutdown</div>
+        <div class="term-val">Spring Boot 2.3+ 內建支援。在 <code>application.yml</code> 設定 <code>server.shutdown: graceful</code> 與 <code>spring.lifecycle.timeout-per-shutdown-phase: 30s</code>，搭配 K8s <code>terminationGracePeriodSeconds: 30</code>，確保現有請求處理完畢再退出。</div>
+      </div>
+      <div class="term">
+        <div class="term-key"><span class="tag tag-sre">SRE</span>Spring Boot Actuator</div>
+        <div class="term-val">Spring Boot 的生產就緒監控模組。自動暴露 <code>/actuator/health</code>、<code>/actuator/metrics</code>、<code>/actuator/prometheus</code> 等端點，與 Prometheus + Grafana 整合完全無需額外程式碼，加入依賴即啟用。</div>
+      </div>
+      <div class="term">
+        <div class="term-key"><span class="tag tag-sre">SRE</span>External Secrets Operator</div>
+        <div class="term-val">K8s 的 Secret 管理方案。從 Vault 或 AWS Secrets Manager 自動同步 API Key 到 K8s Secret，Spring Boot 透過環境變數注入（<code>@Value("${provider.api-key}")</code>），避免敏感資訊進入 Git 或 <code>provider.yaml</code>。</div>
+      </div>
+    </div>
+
+    <h3>共用介面（Java）</h3>
+    <div class="terms">
+      <div class="term">
+        <div class="term-key"><span class="tag tag-java">Java</span>IProviderNode interface</div>
+        <div class="term-val">定義在 <code>shared/interfaces</code> Maven module 中的 Java interface，宣告 <code>search()</code>、<code>createOrder()</code>、<code>confirmPayment()</code>、<code>cancel()</code> 四個標準方法。各 Node 的 Spring Service 實作此 interface。</div>
+      </div>
+      <div class="term">
+        <div class="term-key"><span class="tag tag-java">Java</span>@Service annotation</div>
+        <div class="term-val">Spring 的 Bean 宣告 annotation。每個 Node 的 Provider 實作類加上 <code>@Service</code>，Spring 容器自動管理其生命週期，並可透過建構子注入在 Gateway 中使用，無需手動實例化。</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 03 新增 Node SOP ══ -->
+  <section id="sop">
+    <div class="section-eyebrow">03 · Standard Operating Procedure</div>
+    <h2>新增票池 Node 的完整 SOP</h2>
+
+    <p>從複製 template 到自動部署完成，開發者只需執行以下步驟，不需接觸任何 K8s YAML 或 Helm 設定。</p>
+
+    <div class="flow">
+
+      <div class="flow-step">
+        <div class="step-num">1</div>
+        <div class="step-content">
+          <div class="step-title">複製 _template module</div>
+          <div class="step-desc">從 Monorepo 的 <code>packages/_template</code> 複製一份作為新 Node 的起始點，包含標準的 pom.xml、目錄結構與 provider.yaml 範本。</div>
+          <div class="code-block">
+            <div class="code-block-header">
+              <span class="code-dot" style="background:#ef4444"></span>
+              <span class="code-dot" style="background:#f59e0b"></span>
+              <span class="code-dot" style="background:#22c55e"></span>
+              <span style="margin-left:4px">bash</span>
+            </div>
+            <pre>cp -r packages/_template packages/viator-node</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-step">
+        <div class="step-num">2</div>
+        <div class="step-content">
+          <div class="step-title">在根 pom.xml 宣告新 module</div>
+          <div class="step-desc">把新 Node 加入根目錄的 parent POM，Maven 才能識別這個子模組並在 build 時包含它。</div>
+          <div class="code-block">
+            <div class="code-block-header">
+              <span class="code-dot" style="background:#ef4444"></span>
+              <span class="code-dot" style="background:#f59e0b"></span>
+              <span class="code-dot" style="background:#22c55e"></span>
+              <span style="margin-left:4px">pom.xml（根目錄）</span>
+            </div>
+            <pre><span class="kw">&lt;modules&gt;</span>
+  <span class="kw">&lt;module&gt;</span><span class="str">shared/interfaces</span><span class="kw">&lt;/module&gt;</span>
+  <span class="kw">&lt;module&gt;</span><span class="str">packages/gateway</span><span class="kw">&lt;/module&gt;</span>
+  <span class="kw">&lt;module&gt;</span><span class="str">packages/klook-node</span><span class="kw">&lt;/module&gt;</span>
+  <span class="kw">&lt;module&gt;</span><span class="str">packages/kkday-node</span><span class="kw">&lt;/module&gt;</span>
+  <span class="kw">&lt;module&gt;</span><span class="str">packages/viator-node</span><span class="kw">&lt;/module&gt;</span>  <span class="cm">&lt;!-- 新增 --&gt;</span>
+<span class="kw">&lt;/modules&gt;</span></pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-step">
+        <div class="step-num">3</div>
+        <div class="step-content">
+          <div class="step-title">填寫 provider.yaml</div>
+          <div class="step-desc">唯一需要手填的部署設定。填完後 CI 自動渲染所有 K8s manifest，不需手動寫任何 YAML。注意 Spring Boot 的 <code>initialDelaySeconds</code> 要設 30 秒。</div>
+          <div class="code-block">
+            <div class="code-block-header">
+              <span class="code-dot" style="background:#ef4444"></span>
+              <span class="code-dot" style="background:#f59e0b"></span>
+              <span class="code-dot" style="background:#22c55e"></span>
+              <span style="margin-left:4px">packages/viator-node/provider.yaml</span>
+            </div>
+            <pre><span class="prop">provider</span>:
+  <span class="prop">name</span>: <span class="str">viator</span>
+  <span class="prop">image</span>: <span class="str">your-registry/viator-node</span>
+  <span class="prop">port</span>: <span class="num">8080</span>
+
+<span class="prop">resources</span>:
+  <span class="prop">requests</span>:
+    <span class="prop">cpu</span>: <span class="str">"200m"</span>
+    <span class="prop">memory</span>: <span class="str">"512Mi"</span>
+  <span class="prop">limits</span>:
+    <span class="prop">cpu</span>: <span class="str">"1000m"</span>
+    <span class="prop">memory</span>: <span class="str">"1Gi"</span>
+
+<span class="prop">hpa</span>:
+  <span class="prop">minReplicas</span>: <span class="num">2</span>
+  <span class="prop">maxReplicas</span>: <span class="num">5</span>
+  <span class="prop">cpuTargetUtilization</span>: <span class="num">70</span>
+
+<span class="prop">health</span>:
+  <span class="prop">livenessPath</span>: <span class="str">/actuator/health/liveness</span>
+  <span class="prop">readinessPath</span>: <span class="str">/actuator/health/readiness</span>
+  <span class="prop">initialDelaySeconds</span>: <span class="num">30</span>  <span class="cm"># JVM 啟動較慢，必填</span>
+  <span class="prop">gracePeriod</span>: <span class="num">30</span></pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-step">
+        <div class="step-num">4</div>
+        <div class="step-content">
+          <div class="step-title">實作四個標準介面方法</div>
+          <div class="step-desc">繼承 <code>shared/interfaces</code> 的 <code>IProviderNode</code>，加上 <code>@Service</code> 和 Resilience4j annotation。Gateway 和主系統零改動。</div>
+          <div class="code-block">
+            <div class="code-block-header">
+              <span class="code-dot" style="background:#ef4444"></span>
+              <span class="code-dot" style="background:#f59e0b"></span>
+              <span class="code-dot" style="background:#22c55e"></span>
+              <span style="margin-left:4px">ViatorProvider.java</span>
+            </div>
+            <pre><span class="ann">@Service</span>
+<span class="kw">public class</span> <span class="typ">ViatorProvider</span> <span class="kw">implements</span> <span class="typ">IProviderNode</span> {
+
+  <span class="ann">@CircuitBreaker</span>(name = <span class="str">"viator"</span>, fallbackMethod = <span class="str">"searchFallback"</span>)
+  <span class="ann">@Bulkhead</span>(name = <span class="str">"viator"</span>)
+  <span class="kw">public</span> <span class="typ">SearchResult</span> search(<span class="typ">SearchRequest</span> req) {
+    <span class="cm">// 呼叫 Viator 外部 API</span>
+  }
+
+  <span class="ann">@CircuitBreaker</span>(name = <span class="str">"viator"</span>)
+  <span class="kw">public</span> <span class="typ">OrderResult</span> createOrder(<span class="typ">OrderRequest</span> req) { ... }
+
+  <span class="kw">public</span> <span class="typ">ConfirmResult</span> confirmPayment(<span class="typ">ConfirmRequest</span> req) { ... }
+
+  <span class="kw">public</span> <span class="typ">CancelResult</span> cancel(<span class="typ">CancelRequest</span> req) { ... }
+
+  <span class="cm">// Fallback：熔斷時回傳 Redis 快取結果</span>
+  <span class="kw">private</span> <span class="typ">SearchResult</span> searchFallback(<span class="typ">SearchRequest</span> req, <span class="typ">Exception</span> e) {
+    <span class="kw">return</span> cacheService.getCachedResult(req);
+  }
+}</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-step">
+        <div class="step-num">5</div>
+        <div class="step-content">
+          <div class="step-title">推 PR → CI 自動 build 並 dry-run</div>
+          <div class="step-desc">CI 偵測有變動的 module，只 build 該 Node 並用 Jib 打 image，接著 <code>helm template --dry-run</code> 把 K8s manifest diff 貼到 PR comment，reviewer 直接看到會產生哪些資源。</div>
+          <div class="code-block">
+            <div class="code-block-header">
+              <span class="code-dot" style="background:#ef4444"></span>
+              <span class="code-dot" style="background:#f59e0b"></span>
+              <span class="code-dot" style="background:#22c55e"></span>
+              <span style="margin-left:4px">.github/workflows/ci.yaml（節錄）</span>
+            </div>
+            <pre><span class="cm"># 偵測有變動的 module</span>
+CHANGED=$(git diff --name-only origin/main \
+  | grep <span class="str">'^packages/'</span> | cut -d<span class="str">'/'</span> -f2 | sort -u)
+
+<span class="cm"># 只 build 有變動的 Node</span>
+./mvnw package -pl packages/$CHANGED -am -DskipTests=<span class="kw">false</span>
+
+<span class="cm"># Jib 打包並推送 image（不需 Dockerfile）</span>
+./mvnw jib:build -pl packages/$CHANGED \
+  -Djib.to.tags=$GIT_SHA
+
+<span class="cm"># Helm dry-run，結果貼至 PR comment</span>
+helm template $CHANGED ./infra/charts/provider-node \
+  --values packages/$CHANGED/provider.yaml \
+  --set image.tag=$GIT_SHA \
+  --dry-run</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-step">
+        <div class="step-num">6</div>
+        <div class="step-content">
+          <div class="step-title">Merge → 自動部署</div>
+          <div class="step-desc">CI 渲染 Helm manifest 並 apply 至 <code>ticket-middleware</code> namespace，等待 Readiness Probe 通過後標記 Grafana deployment annotation。其他 Node 完全不動。</div>
+          <div class="code-block">
+            <div class="code-block-header">
+              <span class="code-dot" style="background:#ef4444"></span>
+              <span class="code-dot" style="background:#f59e0b"></span>
+              <span class="code-dot" style="background:#22c55e"></span>
+              <span style="margin-left:4px">.github/workflows/deploy.yaml（節錄）</span>
+            </div>
+            <pre">helm upgrade --install $CHANGED-node \
+  ./infra/charts/provider-node \
+  --values packages/$CHANGED/provider.yaml \
+  --set image.tag=$GIT_SHA \
+  --namespace ticket-middleware \
+  --create-namespace
+
+<span class="cm"># 等待 Readiness Probe 通過</span>
+kubectl rollout status deployment/$CHANGED-node \
+  -n ticket-middleware
+
+<span class="cm"># 標記 Grafana deployment annotation</span>
+curl -X POST $GRAFANA_API/annotations \
+  -d <span class="str">'{"text":"Deploy: '"$CHANGED"'-node @ '"$GIT_SHA"'"}'</span></pre>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="summary-box">
+      <div class="summary-label">SOP 總結</div>
+      <div class="summary-text">
+        開發者只需做三件事：<strong>複製 template</strong>、<strong>填 provider.yaml</strong>、<strong>實作四個方法</strong>。<br>
+        CI/CD 自動處理：build → Jib 打包 → Helm 渲染 → K8s 部署 → Grafana 標記。<br>
+        全程不需要接觸任何 K8s YAML，其他 Node 的服務不受影響。
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <span>票券分銷系統 · 多票池節點中台架構筆記 · Spring Boot 版</span>
+  <span>Maven Multi-Module · Jib · Helm · Kubernetes · Resilience4j</span>
+</footer>
+
+</body>
+</html>
