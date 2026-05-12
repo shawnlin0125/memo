@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ticket Middleware — 架構規劃文件</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+TC:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #181c27;
+    --surface2: #1f2535;
+    --border: rgba(255,255,255,0.08);
+    --border2: rgba(255,255,255,0.14);
+    --text: #e2e8f0;
+    --muted: #7c8a9e;
+    --accent: #4f8ef7;
+    --accent2: #38d9a9;
+    --accent3: #f59e0b;
+    --accent4: #f87171;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'Noto Sans TC', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 15px; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    line-height: 1.75;
+    padding: 3rem 1.5rem 6rem;
+  }
+  .container { max-width: 860px; margin: 0 auto; }
+
+  /* Header */
+  .doc-header {
+    border-bottom: 1px solid var(--border2);
+    padding-bottom: 2rem;
+    margin-bottom: 3rem;
+  }
+  .doc-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-bottom: 0.75rem;
+  }
+  .doc-title {
+    font-size: 2rem;
+    font-weight: 500;
+    color: var(--text);
+    line-height: 1.2;
+    margin-bottom: 0.75rem;
+  }
+  .doc-subtitle {
+    color: var(--muted);
+    font-size: 0.95rem;
+  }
+
+  /* TOC */
+  .toc {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 3rem;
+  }
+  .toc-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 0.75rem;
+  }
+  .toc ol { padding-left: 1.2rem; }
+  .toc li { margin: 0.25rem 0; }
+  .toc a {
+    color: var(--accent);
+    text-decoration: none;
+    font-size: 0.9rem;
+  }
+  .toc a:hover { text-decoration: underline; }
+
+  /* Sections */
+  .section { margin-bottom: 3.5rem; }
+  .section-num {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    letter-spacing: 0.1em;
+    margin-bottom: 0.4rem;
+  }
+  h2 {
+    font-size: 1.35rem;
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 1.25rem;
+    padding-bottom: 0.6rem;
+    border-bottom: 1px solid var(--border);
+  }
+  h3 {
+    font-size: 1rem;
+    font-weight: 500;
+    color: var(--text);
+    margin: 1.5rem 0 0.6rem;
+  }
+  p {
+    color: var(--muted);
+    font-size: 0.93rem;
+    margin-bottom: 0.75rem;
+  }
+
+  /* Code blocks */
+  pre {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.1rem 1.25rem;
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    line-height: 1.7;
+    overflow-x: auto;
+    color: #a8c4e0;
+    margin: 0.75rem 0 1.25rem;
+  }
+  code {
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 6px;
+    color: var(--accent2);
+  }
+  .cm { color: var(--muted); }
+  .ck { color: var(--accent); }
+  .cv { color: var(--accent2); }
+  .cs { color: var(--accent3); }
+  .ce { color: var(--accent4); }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+    margin: 0.75rem 0 1.25rem;
+  }
+  th {
+    text-align: left;
+    font-weight: 500;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+    padding: 0.6rem 0.9rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+  }
+  td {
+    padding: 0.6rem 0.9rem;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    vertical-align: top;
+  }
+  td:first-child { color: var(--text); font-family: var(--mono); font-size: 0.8rem; }
+
+  /* Cards */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.1rem 1.25rem;
+    margin: 0.75rem 0;
+  }
+  .card-title {
+    font-size: 0.88rem;
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card p { margin-bottom: 0; }
+
+  /* Badges */
+  .badge {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    padding: 2px 8px;
+    border-radius: 4px;
+    letter-spacing: 0.05em;
+  }
+  .badge-blue { background: rgba(79,142,247,0.15); color: var(--accent); border: 1px solid rgba(79,142,247,0.3); }
+  .badge-green { background: rgba(56,217,169,0.12); color: var(--accent2); border: 1px solid rgba(56,217,169,0.3); }
+  .badge-amber { background: rgba(245,158,11,0.12); color: var(--accent3); border: 1px solid rgba(245,158,11,0.3); }
+  .badge-red { background: rgba(248,113,113,0.12); color: var(--accent4); border: 1px solid rgba(248,113,113,0.3); }
+
+  /* Steps */
+  .steps { margin: 0.75rem 0 1.25rem; }
+  .step {
+    display: flex;
+    gap: 14px;
+    margin-bottom: 1rem;
+  }
+  .step-num {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: rgba(79,142,247,0.15);
+    border: 1px solid rgba(79,142,247,0.35);
+    color: var(--accent);
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 2px;
+  }
+  .step-body { flex: 1; }
+  .step-body p { margin-bottom: 0.4rem; }
+
+  /* Flow diagram (CSS only) */
+  .flow {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    margin: 0.75rem 0 1.25rem;
+    align-items: flex-start;
+  }
+  .flow-node {
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    padding: 0.5rem 1rem;
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    color: var(--text);
+    position: relative;
+  }
+  .flow-node.accent { border-color: rgba(79,142,247,0.5); color: var(--accent); }
+  .flow-node.green { border-color: rgba(56,217,169,0.5); color: var(--accent2); }
+  .flow-node.amber { border-color: rgba(245,158,11,0.5); color: var(--accent3); }
+  .flow-arrow {
+    width: 1px;
+    height: 24px;
+    background: var(--border2);
+    margin-left: 20px;
+    position: relative;
+  }
+  .flow-arrow::after {
+    content: '▼';
+    position: absolute;
+    bottom: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 8px;
+    color: var(--muted);
+  }
+  .flow-label {
+    font-size: 0.75rem;
+    color: var(--muted);
+    font-family: var(--mono);
+    margin-left: 28px;
+    margin-bottom: 2px;
+    margin-top: 4px;
+  }
+
+  ul { padding-left: 1.2rem; margin: 0.5rem 0 0.75rem; }
+  li { color: var(--muted); font-size: 0.93rem; margin-bottom: 0.2rem; }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 2.5rem 0; }
+
+  .highlight { color: var(--accent2); }
+  .warn { color: var(--accent3); }
+  .danger { color: var(--accent4); }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="doc-header">
+    <div class="doc-label">架構規劃文件 · Ticket Middleware</div>
+    <div class="doc-title">票池中台開發規範</div>
+    <div class="doc-subtitle">Spring Boot 微服務 · Monorepo · k8s 部署</div>
+  </div>
+
+  <div class="toc">
+    <div class="toc-title">目錄</div>
+    <ol>
+      <li><a href="#s1">專案架構</a></li>
+      <li><a href="#s2">分支策略與版本管理</a></li>
+      <li><a href="#s3">開發流程</a></li>
+      <li><a href="#s4">部署流程</a></li>
+      <li><a href="#s5">多節點交錯合入情境</a></li>
+      <li><a href="#s6">Hotfix 流程</a></li>
+      <li><a href="#s7">shared/interfaces 修改流程</a></li>
+      <li><a href="#s8">新增節點流程</a></li>
+      <li><a href="#s9">CI/CD 自動化</a></li>
+      <li><a href="#s10">全自動化開發部署（AI 節點）</a></li>
+      <li><a href="#s11">共用資料庫與 Redis 架構</a></li>
+    </ol>
+  </div>
+
+  <!-- Section 1 -->
+  <div class="section" id="s1">
+    <div class="section-num">01</div>
+    <h2>專案架構</h2>
+    <p>採用 Monorepo 架構，每個 package 作為獨立微服務部署。Gateway 由 k8s Ingress 取代，不需獨立 package。</p>
+<pre><span class="cv">ticket-middleware/</span>          <span class="cm">← 根 pom.xml（parent POM）</span>
+├── <span class="ck">shared/</span>
+│   └── <span class="ck">interfaces/</span>         <span class="cm">← IProviderNode 介面定義（Maven module）</span>
+│       ├── pom.xml
+│       └── src/main/java/
+│           └── IProviderNode.java
+├── <span class="ck">packages/</span>
+│   ├── <span class="cv">klook-node/</span>         <span class="cm">← Klook 供應商實作（Maven module）</span>
+│   ├── <span class="cv">kkday-node/</span>         <span class="cm">← KKday 供應商實作（Maven module）</span>
+│   └── <span class="cs">_template/</span>          <span class="cm">← 新節點複製模板</span>
+└── <span class="ck">infra/</span>
+    └── charts/provider-node/  <span class="cm">← Helm chart</span></pre>
+
+    <div class="card">
+      <div class="card-title"><span class="badge badge-amber">注意</span> Gateway package 已移除</div>
+      <p>k8s Ingress + Service（CNAME）已涵蓋路由、認證、SSL 終止、流量限速、統一 log 等職責，不需額外的 gateway package。</p>
+    </div>
+  </div>
+
+  <!-- Section 2 -->
+  <div class="section" id="s2">
+    <div class="section-num">02</div>
+    <h2>分支策略與版本管理</h2>
+    <p>單一主線 <code>master</code>，分支命名加節點前綴做視覺隔離。移除 development 與 release 分支，以 tag 控制版本與部署。</p>
+
+    <table>
+      <tr><th>分支</th><th>用途</th><th>規則</th></tr>
+      <tr><td>master</td><td>唯一主線，唯一部署來源</td><td>只能透過 PR 合入；tag 觸發部署</td></tr>
+      <tr><td>feature/klook-{描述}-{task}</td><td>功能開發</td><td>完成後直接 PR 進 master</td></tr>
+      <tr><td>hotfix/klook-{描述}</td><td>緊急修正</td><td>從 master 開，修完合回 master</td></tr>
+    </table>
+
+    <h3>Tag 版本格式</h3>
+    <p>Tag 永遠打在 <code>master</code> 上，代表「此節點此版本已審查可部署」。各節點版本號完全獨立。</p>
+<pre><span class="cv">klook-node/v1.0.0</span>
+<span class="cv">klook-node/v1.1.0</span>   <span class="cm">← patch: hotfix</span>
+<span class="cv">klook-node/v1.2.0</span>   <span class="cm">← minor: 新功能</span>
+<span class="cs">kkday-node/v1.0.0</span>
+<span class="cs">kkday-node/v2.0.0</span></pre>
+
+    <div class="card">
+      <div class="card-title"><span class="badge badge-blue">版號規則</span></div>
+      <p>新功能 → minor 遞增（v1.1.0 → v1.2.0）<br>Hotfix → patch 遞增（v1.1.0 → v1.1.1）</p>
+    </div>
+  </div>
+
+  <!-- Section 3 -->
+  <div class="section" id="s3">
+    <div class="section-num">03</div>
+    <h2>開發流程</h2>
+    <p>無論改動大小，所有修改一律透過 feature branch，確保 master 上每個 commit 都是經過測試的。</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <p>從 master 開 feature branch，命名加節點前綴</p>
+          <pre><span class="ck">git checkout</span> <span class="cv">-b</span> feature/klook-search-api-TASK-001</pre>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <p>只改自己節點路徑下的檔案，push 觸發 CI 跑對應節點 scenario test</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <p>CI 通過後發 PR，review 後 merge 進 master</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <p>手動打 tag，CI 自動 build + deploy 對應節點</p>
+          <pre><span class="ck">git tag</span> <span class="cv">klook-node/v1.2.0</span>
+<span class="ck">git push origin</span> <span class="cv">klook-node/v1.2.0</span></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Section 4 -->
+  <div class="section" id="s4">
+    <div class="section-num">04</div>
+    <h2>部署流程</h2>
+    <p>部署由 tag 名稱前綴觸發，與 commit 內容無關。只有打了對應 tag，CI 才會 build 並部署該節點。</p>
+
+    <div class="flow">
+      <div class="flow-node accent">feature/klook-xxx → PR → master merge</div>
+      <div class="flow-arrow"></div>
+      <div class="flow-node">git tag klook-node/v1.2.0 &amp;&amp; git push</div>
+      <div class="flow-arrow"></div>
+      <div class="flow-label">CI 偵測 tag 前綴 refs/tags/klook-node/*</div>
+      <div class="flow-node">mvn build -pl packages/klook-node</div>
+      <div class="flow-arrow"></div>
+      <div class="flow-node green">部署 klook-node → production ✓</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="badge badge-green">關鍵</span> kkday 完全不受影響</div>
+      <p>CI 由 tag 名稱決定 build 哪個子模組（<code>-pl packages/klook-node</code>），kkday 的程式碼就算在同一個 commit 裡也不會被 build 或部署。</p>
+    </div>
+  </div>
+
+  <!-- Section 5 -->
+  <div class="section" id="s5">
+    <div class="section-num">05</div>
+    <h2>多節點交錯合入情境</h2>
+    <p>klook 與 kkday 同時有異動，klook 通過、kkday 不通過：</p>
+<pre>A(klook) → B(kkday) → C(kkday) → D(klook) → E(klook)</pre>
+
+    <div class="card">
+      <div class="card-title"><span class="badge badge-blue">情況一</span> kkday 的 B、C 不影響 shared</div>
+      <p>直接在 E 打 <code>klook-node/v1.1.0</code>，CI 只 build <code>packages/klook-node/</code>。<br>kkday 修好後再補打 tag，兩者互不影響。</p>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="badge badge-red">情況二</span> kkday 的 B、C 影響到 shared</div>
+      <p>必須先 revert B、C，確保 shared 是乾淨的，再打 klook tag。kkday 修好後重新 merge 並補打 tag。</p>
+<pre><span class="ck">git revert</span> C
+<span class="ck">git revert</span> B
+<span class="cm"># master 乾淨後再打 klook tag</span>
+<span class="ck">git tag</span> <span class="cv">klook-node/v1.1.0</span>
+<span class="cm"># kkday 修好後</span>
+<span class="ck">git tag</span> <span class="cs">kkday-node/v2.0.1</span></pre>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="badge badge-amber">原則</span> master 應隨時保持可部署狀態</div>
+      <p>不通過的節點應在 feature branch 的 CI 就被擋住，不應進入 master。若已合入且有問題，用 revert 而非讓壞程式碼停留。</p>
+    </div>
+  </div>
+
+  <!-- Section 6 -->
+  <div class="section" id="s6">
+    <div class="section-num">06</div>
+    <h2>Hotfix 流程</h2>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <p>從 master 開 hotfix branch</p>
+          <pre><span class="ck">git checkout</span> <span class="cv">-b</span> hotfix/klook-fix-price-bug</pre>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <p>修正 bug，push 觸發 CI 跑 klook scenario test</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <p>CI 通過 → PR merge 回 master → 打 patch 版 tag</p>
+          <pre><span class="ck">git tag</span> <span class="cv">klook-node/v1.1.1</span>   <span class="cm">← patch 遞增</span>
+<span class="ck">git push origin</span> <span class="cv">klook-node/v1.1.1</span></pre>
+        </div>
+      </div>
+    </div>
+
+    <h3>與進行中 feature 的衝突</h3>
+    <p>hotfix merge 進 master 後，如果此時有其他 feature PR 的 base 已落後：</p>
+<pre><span class="cm"># feature branch 需要先同步 master</span>
+<span class="ck">git checkout</span> feature/klook-search-api
+<span class="ck">git merge</span> master   <span class="cm">← 解衝突（如果有）</span>
+<span class="ck">git push</span>           <span class="cm">← CI 重新跑一次</span></pre>
+    <p>衝突發生機率低，hotfix 通常改動範圍小且精準，與進行中的 feature 動到同一行的情況不常見。</p>
+  </div>
+
+  <!-- Section 7 -->
+  <div class="section" id="s7">
+    <div class="section-num">07</div>
+    <h2>shared/interfaces 修改流程</h2>
+    <p><code>shared/interfaces</code> 存放 <code>IProviderNode</code> 共用介面，影響所有節點。修改時機：新增共用方法、修改方法簽章、新增共用資料結構（DTO）。</p>
+
+    <h3>開發方式</h3>
+    <p>單一 PR 包含 shared 改動與所有節點的實作更新，一次解決。</p>
+<pre>feature/shared-add-cancel-order
+  ├── shared/interfaces/IProviderNode.java   <span class="cm">← 新增 cancelOrder()</span>
+  ├── packages/klook-node/...                <span class="cm">← 實作 cancelOrder()</span>
+  └── packages/kkday-node/...                <span class="cm">← 實作 cancelOrder()</span></pre>
+
+    <p>CI 偵測到 <code>shared/</code> 有變動，自動觸發所有節點的 test：</p>
+<pre>shared/** 有變動
+  ├── 跑 klook scenario test
+  └── 跑 kkday scenario test
+      <span class="cm">↑ 全過才能 merge 進 master</span></pre>
+
+    <h3>降低衝擊：使用 default 方法</h3>
+    <p>如果新方法不需要所有節點立即實作，可以提供預設實作讓各節點按節奏跟進：</p>
+<pre><span class="cm">// 舊方法不動</span>
+<span class="ck">void</span> <span class="cv">searchTicket</span>(String date);
+
+<span class="cm">// 新方法提供 default，不強迫立即實作</span>
+<span class="ck">default void</span> <span class="cv">searchTicket</span>(String date, String currency) {
+    searchTicket(date);  <span class="cm">// fallback 到舊方法</span>
+}</pre>
+  </div>
+
+  <!-- Section 8 -->
+  <div class="section" id="s8">
+    <div class="section-num">08</div>
+    <h2>新增節點流程</h2>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <p>執行腳本，自動從 <code>_template/</code> 複製並替換佔位符</p>
+          <pre>./scripts/new-node.sh my-new-vendor</pre>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <p>腳本自動完成：</p>
+          <ul>
+            <li>複製 <code>_template/</code> → <code>packages/my-new-vendor-node/</code></li>
+            <li>替換 <code>pom.xml</code> 內的 <code>__NODE_NAME__</code> 佔位符</li>
+            <li>建立 <code>.github/workflows/my-new-vendor-node-ci.yml</code></li>
+          </ul>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <p>實作 <code>IProviderNode</code> 介面，scenario test 骨架已在模板內</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <p>走標準開發流程：feature branch → CI → PR → master → tag → 部署</p>
+        </div>
+      </div>
+    </div>
+
+    <h3>_template 內容</h3>
+<pre><span class="cs">_template/</span>
+├── pom.xml                      <span class="cm">← artifactId 用 __NODE_NAME__ 佔位</span>
+├── src/main/java/
+│   └── ProviderNodeImpl.java    <span class="cm">← 實作 IProviderNode 骨架</span>
+└── src/test/
+    └── ScenarioTest.java        <span class="cm">← 標準 scenario test 骨架</span></pre>
+  </div>
+
+  <!-- Section 9 -->
+  <div class="section" id="s9">
+    <div class="section-num">09</div>
+    <h2>CI/CD 自動化</h2>
+
+    <h3>路徑感知觸發（GitHub Actions 範例）</h3>
+<pre><span class="cm"># .github/workflows/klook-node-ci.yml</span>
+<span class="ck">on</span>:
+  <span class="cv">push</span>:
+    <span class="cv">paths</span>:
+      - <span class="cs">'packages/klook-node/**'</span>
+      - <span class="cs">'shared/**'</span>   <span class="cm"># shared 改動也觸發</span>
+
+<span class="ck">jobs</span>:
+  <span class="cv">test</span>:
+    <span class="cv">steps</span>:
+      - <span class="cv">run</span>: <span class="cs">mvn test -pl packages/klook-node</span>
+
+  <span class="cv">deploy</span>:
+    <span class="cv">needs</span>: test
+    <span class="cv">if</span>: <span class="cs">startsWith(github.ref, 'refs/tags/klook-node/')</span>
+    <span class="cv">steps</span>:
+      - <span class="cv">run</span>: <span class="cs">./infra/deploy.sh klook-node ${{ github.ref_name }}</span></pre>
+
+    <h3>品質閘門</h3>
+    <table>
+      <tr><th>階段</th><th>動作</th><th>通過條件</th></tr>
+      <tr><td>push feature branch</td><td>跑對應節點 scenario test</td><td>全數通過才可發 PR</td></tr>
+      <tr><td>PR merge 進 master</td><td>再次跑 test（保險）</td><td>通過才可 merge</td></tr>
+      <tr><td>master 打 tag</td><td>build + deploy 對應節點</td><td>只部署該節點</td></tr>
+    </table>
+  </div>
+
+  <!-- Section 10 -->
+  <div class="section" id="s10">
+    <div class="section-num">10</div>
+    <h2>全自動化開發部署（AI 節點）</h2>
+    <p>當節點由 AI 開發時，整個流程可高度自動化，人工介入降到最低。</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body"><p>人下指令：「新增 MyVendor 節點，支援搜尋、預訂、取消」</p></div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <p>AI 自動執行：建立 feature branch → 複製 template → 實作介面 → 撰寫 scenario test → push</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <p>CI 自動跑 scenario test</p>
+          <ul>
+            <li>通過 → 自動發 PR</li>
+            <li>不通過 → AI 讀 CI log 修正，重新 push，直到通過</li>
+          </ul>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body"><p><span class="warn">人工確認 PR 內容</span>，確認程式碼邏輯與測試情境符合業務需求</p></div>
+      </div>
+      <div class="step">
+        <div class="step-num">5</div>
+        <div class="step-body"><p><span class="warn">手動 merge + 打 tag</span>，CI 自動部署到 production</p></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="badge badge-amber">人工介入的兩個點</span></div>
+      <p><strong style="color:var(--text)">PR review</strong> — 確認 AI 產出的邏輯正確，測試情境涵蓋真實業務場景，不只是讓 CI 通過。</p>
+      <p style="margin-top:0.5rem"><strong style="color:var(--text)">打 tag</strong> — 部署到正式系統是高風險操作，由人決定何時部署。初期穩定後可考慮全自動。</p>
+    </div>
+  </div>
+
+  <!-- Section 11 -->
+  <div class="section" id="s11">
+    <div class="section-num">11</div>
+    <h2>共用資料庫與 Redis 架構</h2>
+    <p>PostgreSQL 和 Redis 作為 pod 跑在同一個 k8s namespace，各節點透過 k8s Service name 直接連線，走內部網路，不需要外部主機。</p>
+
+    <h3>k8s namespace 架構</h3>
+<pre><span class="cv">namespace: ticket-middleware</span>
+  ├── klook-node pod
+  ├── kkday-node pod
+  ├── <span class="cs">postgresql pod</span>     <span class="cm">← 同 namespace，內部通訊</span>
+  └── <span class="cs">redis pod</span>          <span class="cm">← 同 namespace，內部通訊</span></pre>
+
+    <h3>資料隔離方式</h3>
+    <table>
+      <tr><th>資源</th><th>隔離方式</th><th>範例</th></tr>
+      <tr><td>PostgreSQL</td><td>schema 隔離，各節點只存取自己的 schema</td><td><code>klook.*</code>、<code>kkday.*</code></td></tr>
+      <tr><td>Redis</td><td>key prefix 隔離</td><td><code>klook:</code>、<code>kkday:</code></td></tr>
+    </table>
+
+    <h3>Spring Boot 設定</h3>
+    <p>同一個 DB instance，各節點透過 <code>default_schema</code> 指定自己的 schema，連線字串用 k8s Service name：</p>
+<pre><span class="cm"># klook-node application.yml</span>
+<span class="ck">spring</span>:
+  <span class="cv">datasource</span>:
+    <span class="cv">url</span>: <span class="cs">jdbc:postgresql://postgresql:5432/ticket_middleware</span>
+  <span class="cv">jpa</span>:
+    <span class="cv">properties</span>:
+      <span class="cv">hibernate</span>:
+        <span class="cv">default_schema</span>: <span class="cs">klook</span>   <span class="cm">← 指定自己的 schema</span>
+  <span class="cv">redis</span>:
+    <span class="cv">host</span>: <span class="cs">redis</span>               <span class="cm">← k8s Service name</span>
+    <span class="cv">port</span>: <span class="cs">6379</span></pre>
+
+    <h3>Flyway — 資料庫版本控制</h3>
+    <p>Flyway 是資料庫的 Git，管理 schema 的變更歷史。節點啟動時自動執行還沒跑過的 migration，確保每個環境的 schema 一致，不需手動進 DB 下 SQL。</p>
+<pre><span class="cm"># migration 執行順序</span>
+V1__init_schema.sql       <span class="cm">← 建立初始 table</span>
+V2__add_currency_col.sql  <span class="cm">← 新增欄位</span>
+V3__add_index.sql         <span class="cm">← 新增 index</span></pre>
+
+    <p>新節點的初始 migration 放在 <code>_template</code> 裡，<code>new-node.sh</code> 複製時自動替換佔位符：</p>
+<pre><span class="cm">-- V1__init_schema.sql</span>
+<span class="ck">CREATE SCHEMA IF NOT EXISTS</span> <span class="cs">__NODE_NAME__</span>;
+<span class="ck">SET</span> search_path <span class="ck">TO</span> <span class="cs">__NODE_NAME__</span>;
+
+<span class="ck">CREATE TABLE</span> orders (...);
+<span class="ck">CREATE TABLE</span> tickets (...);</pre>
+
+    <div class="card">
+      <div class="card-title"><span class="badge badge-green">好處</span> 共用 infrastructure，各自隔離資料</div>
+      <p>不需自己管主機和資料庫伺服器，統一由 k8s 管理備份、擴展、監控。同 namespace 內部通訊延遲低，且各節點資料透過 schema 與 key prefix 完全隔離互不干擾。</p>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
